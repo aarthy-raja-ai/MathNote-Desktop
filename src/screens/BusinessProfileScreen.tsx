@@ -21,6 +21,9 @@ const BusinessProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => 
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
+    const [enableSync, setEnableSync] = useState(false);
+    const [supabaseUrl, setSupabaseUrl] = useState('');
+    const [supabaseKey, setSupabaseKey] = useState('');
     const logoInputRef = useRef<HTMLInputElement>(null);
     const [form, setForm] = useState<FormData>({
         businessName: '',
@@ -66,7 +69,17 @@ const BusinessProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => 
         return Object.keys(errs).length === 0;
     };
 
-    const validateStep3 = (): boolean => {
+    const validateStep3Sync = (): boolean => {
+        if (!enableSync) return true;
+        const errs: Record<string, string> = {};
+        if (!supabaseUrl.trim()) errs.supabaseUrl = 'Supabase Project URL is required';
+        else if (!supabaseUrl.trim().startsWith('http')) errs.supabaseUrl = 'URL must start with http:// or https://';
+        if (!supabaseKey.trim()) errs.supabaseKey = 'Supabase Anon Key is required';
+        setErrors(errs);
+        return Object.keys(errs).length === 0;
+    };
+
+    const validateAccountSetup = (): boolean => {
         const errs: Record<string, string> = {};
         if (!form.ownerUsername.trim()) errs.ownerUsername = 'Username is required';
         else if (form.ownerUsername.trim().length < 3) errs.ownerUsername = 'Username must be at least 3 characters';
@@ -81,7 +94,26 @@ const BusinessProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => 
     const handleNext = async () => {
         if (step === 1 && validateStep1()) setStep(2);
         else if (step === 2 && validateStep2()) setStep(3);
-        else if (step === 3 && validateStep3()) {
+        else if (step === 3 && validateStep3Sync()) setStep(4);
+        else if (step === 4 && validateAccountSetup()) {
+            if (enableSync) {
+                localStorage.setItem('SUPABASE_URL', supabaseUrl.trim());
+                localStorage.setItem('SUPABASE_KEY', supabaseKey.trim());
+                (window as any).SUPABASE_URL = supabaseUrl.trim();
+                (window as any).SUPABASE_KEY = supabaseKey.trim();
+                try {
+                    const { resetSupabaseClient } = await import('../services/supabaseClient');
+                    resetSupabaseClient();
+                } catch (e) {
+                    console.error('Failed to reset supabase client:', e);
+                }
+            } else {
+                localStorage.removeItem('SUPABASE_URL');
+                localStorage.removeItem('SUPABASE_KEY');
+                (window as any).SUPABASE_URL = '';
+                (window as any).SUPABASE_KEY = '';
+            }
+
             const { ownerUsername, ownerPassword, confirmPassword, ...profile } = form;
             await register(profile, ownerUsername, ownerPassword, form.ownerName);
         }
@@ -116,20 +148,25 @@ const BusinessProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => 
                 </div>
 
                 {/* Progress Steps */}
-                <div className="register-steps">
+                <div className="register-steps" style={{ gap: '0.25rem' }}>
                     <div className={`register-step ${step >= 1 ? 'active' : ''} ${step > 1 ? 'done' : ''}`}>
-                        <div className="step-number">{step > 1 ? <Check size={14} /> : '1'}</div>
-                        <span>Business Info</span>
+                        <div className="step-number">{step > 1 ? <Check size={12} /> : '1'}</div>
+                        <span style={{ fontSize: '0.75rem' }}>Business Info</span>
                     </div>
                     <div className="step-line" />
                     <div className={`register-step ${step >= 2 ? 'active' : ''} ${step > 2 ? 'done' : ''}`}>
-                        <div className="step-number">{step > 2 ? <Check size={14} /> : '2'}</div>
-                        <span>Tax Details</span>
+                        <div className="step-number">{step > 2 ? <Check size={12} /> : '2'}</div>
+                        <span style={{ fontSize: '0.75rem' }}>Tax Details</span>
                     </div>
                     <div className="step-line" />
-                    <div className={`register-step ${step >= 3 ? 'active' : ''}`}>
-                        <div className="step-number">3</div>
-                        <span>Account</span>
+                    <div className={`register-step ${step >= 3 ? 'active' : ''} ${step > 3 ? 'done' : ''}`}>
+                        <div className="step-number">{step > 3 ? <Check size={12} /> : '3'}</div>
+                        <span style={{ fontSize: '0.75rem' }}>Cloud Sync</span>
+                    </div>
+                    <div className="step-line" />
+                    <div className={`register-step ${step >= 4 ? 'active' : ''}`}>
+                        <div className="step-number">4</div>
+                        <span style={{ fontSize: '0.75rem' }}>Account</span>
                     </div>
                 </div>
 
@@ -263,9 +300,70 @@ const BusinessProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => 
                     </div>
                 )}
 
-                {/* Step 3: Account Setup */}
+                {/* Step 3: Cloud Sync */}
                 {step === 3 && (
-                    <div className="register-form">
+                    <div className="register-form animate-in">
+                        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Real-time Cloud Sync</h3>
+                            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
+                                Do you want to sync your data across multiple devices (Desktop & Mobile)?
+                            </p>
+                        </div>
+
+                        <div className="form-group">
+                            <div className="flex gap-sm">
+                                <button
+                                    type="button"
+                                    className={`chip ${enableSync ? 'active' : ''}`}
+                                    onClick={() => { setEnableSync(true); setErrors({}); }}
+                                    style={{ flex: 1, padding: '12px', fontSize: '0.9rem', fontWeight: 600 }}
+                                >
+                                    Yes, enable Cloud Sync
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`chip ${!enableSync ? 'active' : ''}`}
+                                    onClick={() => { setEnableSync(false); setErrors({}); }}
+                                    style={{ flex: 1, padding: '12px', fontSize: '0.9rem', fontWeight: 600 }}
+                                >
+                                    No, local device only
+                                </button>
+                            </div>
+                        </div>
+
+                        {enableSync && (
+                            <div className="animate-in" style={{ marginTop: '1.5rem' }}>
+                                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
+                                    Enter your Supabase database connection details below to link your devices:
+                                </p>
+                                <div className="form-group">
+                                    <label className="form-label">Supabase Project URL *</label>
+                                    <input
+                                        className={`form-input ${errors.supabaseUrl ? 'input-error' : ''}`}
+                                        placeholder="https://your-project.supabase.co"
+                                        value={supabaseUrl}
+                                        onChange={e => { setSupabaseUrl(e.target.value); setErrors(prev => { const n = {...prev}; delete n.supabaseUrl; return n; }); }}
+                                    />
+                                    {errors.supabaseUrl && <span className="field-error">{errors.supabaseUrl}</span>}
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Supabase Anon Key *</label>
+                                    <input
+                                        className={`form-input ${errors.supabaseKey ? 'input-error' : ''}`}
+                                        placeholder="your-supabase-anon-key"
+                                        value={supabaseKey}
+                                        onChange={e => { setSupabaseKey(e.target.value); setErrors(prev => { const n = {...prev}; delete n.supabaseKey; return n; }); }}
+                                    />
+                                    {errors.supabaseKey && <span className="field-error">{errors.supabaseKey}</span>}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Step 4: Account Setup */}
+                {step === 4 && (
+                    <div className="register-form animate-in">
                         <div className="security-header">
                             <Lock size={32} color="var(--color-primary)" />
                             <h3>Create your account</h3>
@@ -330,7 +428,7 @@ const BusinessProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => 
                         <ArrowLeft size={16} />{step === 1 ? 'Back to Login' : 'Back'}
                     </button>
                     <button className="btn btn-primary btn-lg" onClick={handleNext}>
-                        {step === 3 ? (
+                        {step === 4 ? (
                             <><Check size={18} /> Create Account</>
                         ) : (
                             <>Continue <ArrowLeft size={16} style={{ transform: 'rotate(180deg)' }} /></>
