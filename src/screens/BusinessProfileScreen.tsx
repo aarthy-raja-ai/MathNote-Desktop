@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { TrendingUp, Building2, User, Phone, Mail, MapPin, Hash, Tag, Lock, Eye, EyeOff, ArrowLeft, Check, CreditCard, Landmark, QrCode, Image } from 'lucide-react';
 import { useAuth, BusinessProfile } from '../context/AuthContext';
 import { INDIAN_STATES } from '../utils/storage';
+import { SQL_SCHEMA } from '../utils/supabaseSchema';
 
 const CATEGORIES = [
     'Retail', 'Wholesale', 'Manufacturing', 'Food & Beverage', 'Services',
@@ -24,6 +25,14 @@ const BusinessProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => 
     const [enableSync, setEnableSync] = useState(false);
     const [supabaseUrl, setSupabaseUrl] = useState('');
     const [supabaseKey, setSupabaseKey] = useState('');
+    const [showGuide, setShowGuide] = useState(false);
+    const [copiedSQL, setCopiedSQL] = useState(false);
+
+    const handleCopySQL = () => {
+        navigator.clipboard.writeText(SQL_SCHEMA);
+        setCopiedSQL(true);
+        setTimeout(() => setCopiedSQL(false), 2000);
+    };
     const logoInputRef = useRef<HTMLInputElement>(null);
     const [form, setForm] = useState<FormData>({
         businessName: '',
@@ -355,6 +364,42 @@ const BusinessProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => 
                                         onChange={e => { setSupabaseKey(e.target.value); setErrors(prev => { const n = {...prev}; delete n.supabaseKey; return n; }); }}
                                     />
                                     {errors.supabaseKey && <span className="field-error">{errors.supabaseKey}</span>}
+                                </div>
+
+                                <div style={{ marginTop: '1rem', borderTop: '1px solid var(--color-border-light)', paddingTop: '1rem' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        style={{ width: '100%', padding: '8px', fontSize: '0.8rem', fontWeight: 600 }}
+                                        onClick={() => setShowGuide(!showGuide)}
+                                    >
+                                        {showGuide ? 'Hide Setup Guide' : 'Show Supabase Setup Guide & SQL Script'}
+                                    </button>
+                                    
+                                    {showGuide && (
+                                        <div className="animate-in" style={{ marginTop: '1rem', background: 'var(--color-bg-light)', padding: '12px', borderRadius: '8px', border: '1px solid var(--color-border-light)', fontSize: '0.8rem', textAlign: 'left', maxHeight: '250px', overflowY: 'auto' }}>
+                                            <h4 style={{ fontWeight: 600, color: 'var(--color-primary)', marginBottom: '8px' }}>Supabase Quick Setup Instructions:</h4>
+                                            <ol style={{ paddingLeft: '16px', margin: '0 0 12px 0', lineHeight: '1.4' }}>
+                                                <li>Create a free project at <a href="https://supabase.com" target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>supabase.com</a>.</li>
+                                                <li>Go to the <strong>SQL Editor</strong> in Supabase dashboard, click <strong>New Query</strong>, paste the script below, and click <strong>Run</strong>.</li>
+                                                <li>Copy your Project URL and Anon Key from project settings and paste them above.</li>
+                                            </ol>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                                <span style={{ fontWeight: 600 }}>SQL Script:</span>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-secondary btn-sm"
+                                                    onClick={handleCopySQL}
+                                                    style={{ padding: '2px 8px', fontSize: '0.7rem' }}
+                                                >
+                                                    {copiedSQL ? '✅ Copied!' : '📋 Copy SQL'}
+                                                </button>
+                                            </div>
+                                            <pre style={{ margin: 0, padding: '8px', background: '#1e293b', color: '#f8fafc', borderRadius: '4px', overflowX: 'auto', fontSize: '0.7rem', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                                                {SQL_SCHEMA}
+                                            </pre>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
