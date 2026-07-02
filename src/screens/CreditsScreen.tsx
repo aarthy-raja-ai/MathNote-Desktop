@@ -2,9 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { CreditCard, Plus, Search, Trash2, X, DollarSign, ArrowUpRight, ArrowDownRight, MessageSquare, Download, History, ChevronDown, ChevronRight, User } from 'lucide-react';
 import { useApp } from '../context';
 import { exportCreditsCSV } from '../utils/exportService';
+import { getFinancialYear } from '../utils/fyHelpers';
 
 const CreditsScreen: React.FC = () => {
-    const { state, addCredit, addCreditPayment, deleteCredit } = useApp();
+    const { state, addCredit, addCreditPayment, deleteCredit, selectedFY, selectedCompanyId } = useApp();
     const currency = state.settings.currency || '₹';
     const fmt = (n: number) => `${currency}${n.toLocaleString('en-IN')}`;
 
@@ -21,17 +22,17 @@ const CreditsScreen: React.FC = () => {
 
     // Individual records
     const filtered = useMemo(() => {
-        let list = [...state.credits].reverse();
+        let list = [...state.credits].filter(c => getFinancialYear(c.date) === selectedFY && (c.companyId || 'default') === selectedCompanyId).reverse();
         if (search) list = list.filter(c => c.party.toLowerCase().includes(search.toLowerCase()));
         if (filterType !== 'all') list = list.filter(c => c.type === filterType);
         if (filterStatus !== 'all') list = list.filter(c => c.status === filterStatus);
         return list;
-    }, [state.credits, search, filterType, filterStatus]);
+    }, [state.credits, search, filterType, filterStatus, selectedFY, selectedCompanyId]);
 
     // Party-wise grouping
     const partyGroups = useMemo(() => {
         const groups: Record<string, { party: string, given: number, taken: number, net: number, count: number }> = {};
-        state.credits.forEach(c => {
+        state.credits.filter(c => getFinancialYear(c.date) === selectedFY && (c.companyId || 'default') === selectedCompanyId).forEach(c => {
             if (!groups[c.party]) groups[c.party] = { party: c.party, given: 0, taken: 0, net: 0, count: 0 };
             const balance = c.amount - (c.paidAmount || 0);
             if (c.type === 'given') groups[c.party].given += balance;
@@ -43,10 +44,15 @@ const CreditsScreen: React.FC = () => {
             .map(g => ({ ...g, net: g.given - g.taken }))
             .filter(g => !search || g.party.toLowerCase().includes(search.toLowerCase()))
             .sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
-    }, [state.credits, search]);
+    }, [state.credits, search, selectedFY, selectedCompanyId]);
 
-    const totalGiven = state.credits.filter(c => c.type === 'given' && c.status === 'pending').reduce((s, c) => s + (c.amount - c.paidAmount), 0);
-    const totalTaken = state.credits.filter(c => c.type === 'taken' && c.status === 'pending').reduce((s, c) => s + (c.amount - c.paidAmount), 0);
+    const totalGiven = useMemo(() => {
+        return state.credits.filter(c => getFinancialYear(c.date) === selectedFY && (c.companyId || 'default') === selectedCompanyId && c.type === 'given' && c.status === 'pending').reduce((s, c) => s + (c.amount - c.paidAmount), 0);
+    }, [state.credits, selectedFY, selectedCompanyId]);
+
+    const totalTaken = useMemo(() => {
+        return state.credits.filter(c => getFinancialYear(c.date) === selectedFY && (c.companyId || 'default') === selectedCompanyId && c.type === 'taken' && c.status === 'pending').reduce((s, c) => s + (c.amount - c.paidAmount), 0);
+    }, [state.credits, selectedFY, selectedCompanyId]);
 
     const handleAdd = async () => {
         const amount = parseFloat(form.amount);

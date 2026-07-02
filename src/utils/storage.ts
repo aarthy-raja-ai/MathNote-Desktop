@@ -21,6 +21,7 @@ export interface SaleItem {
 
 export interface Sale {
     id: string;
+    companyId?: string;
     date: string;
     customerName: string;
     customerState?: string;
@@ -48,6 +49,7 @@ export interface Sale {
 
 export interface Expense {
     id: string;
+    companyId?: string;
     date: string;
     category: string;
     amount: number;
@@ -67,6 +69,7 @@ export interface CreditPayment {
 
 export interface Credit {
     id: string;
+    companyId?: string;
     party: string;
     type: 'given' | 'taken';
     amount: number;
@@ -82,6 +85,7 @@ export interface Credit {
 
 export interface Contact {
     id: string;
+    companyId?: string;
     name: string;
     phone?: string;
     email?: string;
@@ -94,6 +98,7 @@ export interface Contact {
 
 export interface Product {
     id: string;
+    companyId?: string;
     name: string;
     brand?: string;
     sku?: string;
@@ -111,6 +116,7 @@ export interface Product {
 
 export interface SaleReturn {
     id: string;
+    companyId?: string;
     saleId: string;
     date: string;
     party: string;
@@ -122,6 +128,7 @@ export interface SaleReturn {
 
 export interface Purchase {
     id: string;
+    companyId?: string;
     date: string;
     vendorName: string;
     vendorState?: string;
@@ -142,6 +149,7 @@ export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'converted' | 'exp
 
 export interface Quotation {
     id: string;
+    companyId?: string;
     date: string;
     quotationNumber: string;
     customerName: string;
@@ -171,6 +179,7 @@ export type PurchaseOrderStatus = 'draft' | 'sent' | 'received' | 'cancelled';
 
 export interface PurchaseOrder {
     id: string;
+    companyId?: string;
     date: string;
     poNumber: string;
     vendorName: string;
@@ -193,6 +202,7 @@ export type AttendanceStatus = 'present' | 'absent' | 'half-day' | 'late' | 'lea
 
 export interface Attendance {
     id: string;
+    companyId?: string;
     staffId: string;
     staffName: string;
     date: string;
@@ -204,6 +214,7 @@ export type UserRole = 'owner' | 'manager' | 'staff';
 
 export interface User {
     id: string;
+    companyId?: string;
     name: string;
     username: string;
     password: string;
@@ -249,6 +260,15 @@ export interface Settings {
     taxMode?: 'exclusive' | 'inclusive';
 }
 
+export interface Company {
+    id: string;
+    name: string;
+    address?: string;
+    phone?: string;
+    gstin?: string;
+    createdAt: string;
+}
+
 // Indian states list
 export const INDIAN_STATES = [
     'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
@@ -274,6 +294,7 @@ const KEYS = {
     QUOTATIONS: '@mathnote_quotations',
     PURCHASE_ORDERS: '@mathnote_purchase_orders',
     ATTENDANCE: '@mathnote_attendance',
+    COMPANIES: '@mathnote_companies',
 };
 
 // Storage adapter using localStorage
@@ -329,6 +350,9 @@ const storage = {
     async getAttendance(): Promise<Attendance[]> { return (await this.get<Attendance[]>(KEYS.ATTENDANCE)) || []; },
     async setAttendance(v: Attendance[]) { return this.set(KEYS.ATTENDANCE, v); },
 
+    async getCompanies(): Promise<Company[]> { return (await this.get<Company[]>(KEYS.COMPANIES)) || []; },
+    async setCompanies(v: Company[]) { return this.set(KEYS.COMPANIES, v); },
+
     async exportAllData() {
         return {
             sales: await this.getSales(),
@@ -342,6 +366,7 @@ const storage = {
             quotations: await this.getQuotations(),
             purchaseOrders: await this.getPurchaseOrders(),
             attendance: await this.getAttendance(),
+            companies: await this.getCompanies(),
         };
     },
 
@@ -358,6 +383,7 @@ const storage = {
             if (data.quotations) await this.setQuotations(data.quotations as Quotation[]);
             if (data.purchaseOrders) await this.setPurchaseOrders(data.purchaseOrders as PurchaseOrder[]);
             if (data.attendance) await this.setAttendance(data.attendance as Attendance[]);
+            if (data.companies) await this.setCompanies(data.companies as Company[]);
             return true;
         } catch { return false; }
     },

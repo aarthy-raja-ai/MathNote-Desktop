@@ -4,6 +4,7 @@ import { useApp } from '../context';
 import { useAuth } from '../context/AuthContext';
 import { SaleItem, INDIAN_STATES, PurchaseOrderStatus } from '../utils/storage';
 import { generateInvoiceHTML, printInvoice, poToInvoiceData } from '../utils/invoiceGenerator';
+import { getFinancialYear, getNextSequenceNumber } from '../utils/fyHelpers';
 
 const STATUS_COLORS: Record<PurchaseOrderStatus, string> = {
     draft: 'var(--color-text-muted)',
@@ -13,7 +14,7 @@ const STATUS_COLORS: Record<PurchaseOrderStatus, string> = {
 };
 
 const PurchaseOrderScreen: React.FC = () => {
-    const { state, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, addPurchase, updateSettings } = useApp();
+    const { state, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, addPurchase, updateSettings, selectedFY, selectedCompanyId } = useApp();
     const { auth } = useAuth();
     const currency = state.settings.currency || '₹';
     const fmt = (n: number) => `${currency}${Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -73,7 +74,7 @@ const PurchaseOrderScreen: React.FC = () => {
     const igst = isInterState ? taxAmount : 0;
     const grandTotal = subtotal + taxAmount;
 
-    const poNumber = `${state.settings.poPrefix || 'PO'}-${String((state.settings.lastPONumber || 0) + 1).padStart(4, '0')}`;
+    const poNumber = getNextSequenceNumber(state.purchaseOrders, state.settings.poPrefix || 'PO', 'poNumber', selectedFY, selectedCompanyId);
 
     const resetForm = () => {
         setVendorName(''); setVendorState(''); setExpectedDate(''); setFormNote('');
@@ -99,7 +100,6 @@ const PurchaseOrderScreen: React.FC = () => {
             status: 'draft',
             note: formNote || undefined,
         });
-        await updateSettings({ lastPONumber: (state.settings.lastPONumber || 0) + 1 });
         resetForm(); setShowModal(false);
     };
 
@@ -130,11 +130,11 @@ const PurchaseOrderScreen: React.FC = () => {
     };
 
     const filtered = useMemo(() => {
-        let list = [...state.purchaseOrders].reverse();
+        let list = [...state.purchaseOrders].filter(x => getFinancialYear(x.date) === selectedFY && (x.companyId || 'default') === selectedCompanyId).reverse();
         if (search) { const q = search.toLowerCase(); list = list.filter(x => x.vendorName?.toLowerCase().includes(q) || x.poNumber?.toLowerCase().includes(q)); }
         if (statusFilter !== 'all') list = list.filter(x => x.status === statusFilter);
         return list;
-    }, [state.purchaseOrders, search, statusFilter]);
+    }, [state.purchaseOrders, search, statusFilter, selectedFY, selectedCompanyId]);
 
     const currentView = viewId ? state.purchaseOrders.find(po => po.id === viewId) : null;
 

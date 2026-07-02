@@ -12,12 +12,13 @@ import {
 } from 'recharts';
 import { useApp, useAuth } from '../context';
 import { useTheme } from '../theme';
+import { getFinancialYear } from '../utils/fyHelpers';
 
 const CHART_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
 const DARK_CHART_COLORS = ['#818CF8', '#34D399', '#FBBF24', '#F87171', '#A78BFA', '#F472B6', '#2DD4BF', '#FB923C'];
 
 const DashboardScreen: React.FC = () => {
-    const { state, getTodaySales, getTodayExpenses, getTodayProfit, getBalance, getCashBalance, getUPIBalance } = useApp();
+    const { state, getTodaySales, getTodayExpenses, getTodayProfit, getBalance, getCashBalance, getUPIBalance, selectedFY, selectedCompanyId } = useApp();
     const { canViewReports } = useAuth();
     const { isDark } = useTheme();
     const navigate = useNavigate();
@@ -31,7 +32,7 @@ const DashboardScreen: React.FC = () => {
         const query = barcodeQuery.trim();
         if (!query) return;
 
-        const matched = state.products.find(p => p.barcode === query || p.id === query);
+        const matched = state.products.find(p => (p.companyId || 'default') === selectedCompanyId && (p.barcode === query || p.id === query));
         if (matched) {
             setScannedProduct(matched);
             setUnknownBarcode(null);
@@ -40,9 +41,11 @@ const DashboardScreen: React.FC = () => {
         } else {
             const q = query.toLowerCase();
             const matches = state.products.filter(p =>
-                p.name.toLowerCase().includes(q) ||
-                p.sku?.toLowerCase().includes(q) ||
-                p.barcode?.toLowerCase().includes(q)
+                (p.companyId || 'default') === selectedCompanyId && (
+                    p.name.toLowerCase().includes(q) ||
+                    p.sku?.toLowerCase().includes(q) ||
+                    p.barcode?.toLowerCase().includes(q)
+                )
             );
 
             if (matches.length === 1) {
@@ -66,6 +69,18 @@ const DashboardScreen: React.FC = () => {
 
     const fmt = (n: number) => `${currency}${Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
+    const filteredSales = useMemo(() => {
+        return state.sales.filter(s => getFinancialYear(s.date) === selectedFY && (s.companyId || 'default') === selectedCompanyId);
+    }, [state.sales, selectedFY, selectedCompanyId]);
+
+    const filteredExpenses = useMemo(() => {
+        return state.expenses.filter(e => getFinancialYear(e.date) === selectedFY && (e.companyId || 'default') === selectedCompanyId);
+    }, [state.expenses, selectedFY, selectedCompanyId]);
+
+    const filteredCredits = useMemo(() => {
+        return state.credits.filter(c => getFinancialYear(c.date) === selectedFY && (c.companyId || 'default') === selectedCompanyId);
+    }, [state.credits, selectedFY, selectedCompanyId]);
+
     const todaySales = getTodaySales();
     const todayExpenses = getTodayExpenses();
     const todayProfit = getTodayProfit();
@@ -81,51 +96,51 @@ const DashboardScreen: React.FC = () => {
             d.setDate(d.getDate() - i);
             const dateStr = d.toISOString().split('T')[0];
             const dayName = d.toLocaleDateString('en', { weekday: 'short' });
-            const daySales = state.sales.filter(s => s.date === dateStr).reduce((sum, s) => sum + (s.totalAmount ?? 0), 0);
-            const dayExpenses = state.expenses.filter(e => e.date === dateStr).reduce((sum, e) => sum + (e.amount ?? 0), 0);
+            const daySales = filteredSales.filter(s => s.date === dateStr).reduce((sum, s) => sum + (s.totalAmount ?? 0), 0);
+            const dayExpenses = filteredExpenses.filter(e => e.date === dateStr).reduce((sum, e) => sum + (e.amount ?? 0), 0);
             days.push({ name: dayName, sales: daySales, expenses: dayExpenses, profit: daySales - dayExpenses });
         }
         return days;
-    }, [state.sales, state.expenses]);
+    }, [filteredSales, filteredExpenses]);
 
     // Expense categories
     const expenseByCategory = useMemo(() => {
         const catMap: Record<string, number> = {};
-        state.expenses.forEach(e => {
+        filteredExpenses.forEach(e => {
             catMap[e.category || 'Other'] = (catMap[e.category || 'Other'] || 0) + e.amount;
         });
         return Object.entries(catMap)
             .map(([name, value]) => ({ name, value }))
             .sort((a, b) => b.value - a.value)
             .slice(0, 6);
-    }, [state.expenses]);
+    }, [filteredExpenses]);
 
     // Recent activity
     const recentActivity = useMemo(() => {
         const activities: { id: string; type: string; label: string; amount: number; date: string; icon: string }[] = [];
-        state.sales.slice(-5).forEach(s => activities.push({
+        filteredSales.slice(-5).forEach(s => activities.push({
             id: s.id, type: 'sale', label: s.customerName || 'Walk-in', amount: s.totalAmount, date: s.date, icon: 'sale'
         }));
-        state.expenses.slice(-5).forEach(e => activities.push({
+        filteredExpenses.slice(-5).forEach(e => activities.push({
             id: e.id, type: 'expense', label: e.category, amount: -e.amount, date: e.date, icon: 'expense'
         }));
-        state.credits.filter(c => c.status === 'pending').slice(-3).forEach(c => activities.push({
+        filteredCredits.filter(c => c.status === 'pending').slice(-3).forEach(c => activities.push({
             id: c.id, type: 'credit', label: c.party, amount: c.amount - c.paidAmount, date: c.date, icon: 'credit'
         }));
         return activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 8);
-    }, [state.sales, state.expenses, state.credits]);
+    }, [filteredSales, filteredExpenses, filteredCredits]);
 
     // Pending credits
     const pendingCredits = useMemo(() =>
-        state.credits.filter(c => c.status === 'pending' && c.type === 'given')
-        , [state.credits]);
+        filteredCredits.filter(c => c.status === 'pending' && c.type === 'given')
+        , [filteredCredits]);
 
     const totalPending = pendingCredits.reduce((s, c) => s + (c.amount - c.paidAmount), 0);
 
     // Low stock products
     const lowStockProducts = useMemo(() =>
-        state.products.filter(p => p.stock <= (p.lowStockThreshold || 5)).slice(0, 5)
-        , [state.products]);
+        state.products.filter(p => (p.companyId || 'default') === selectedCompanyId && p.stock <= (p.lowStockThreshold || 5)).slice(0, 5)
+        , [state.products, selectedCompanyId]);
 
     // Monthly comparison
     const monthlyComparison = useMemo(() => {
@@ -134,23 +149,23 @@ const DashboardScreen: React.FC = () => {
         const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
-        const thisMonthSales = state.sales.filter(s => s.date.startsWith(thisMonth)).reduce((sum, s) => sum + (s.totalAmount ?? 0), 0);
-        const lastMonthSales = state.sales.filter(s => s.date.startsWith(lastMonth)).reduce((sum, s) => sum + (s.totalAmount ?? 0), 0);
+        const thisMonthSales = filteredSales.filter(s => s.date.startsWith(thisMonth)).reduce((sum, s) => sum + (s.totalAmount ?? 0), 0);
+        const lastMonthSales = filteredSales.filter(s => s.date.startsWith(lastMonth)).reduce((sum, s) => sum + (s.totalAmount ?? 0), 0);
         const change = lastMonthSales > 0 ? ((thisMonthSales - lastMonthSales) / lastMonthSales * 100) : 0;
         return { thisMonth: thisMonthSales, lastMonth: lastMonthSales, change };
-    }, [state.sales]);
+    }, [filteredSales]);
 
     // Top customers
     const topCustomers = useMemo(() => {
         const custMap: Record<string, number> = {};
-        state.sales.forEach(s => {
+        filteredSales.forEach(s => {
             if (s.customerName) custMap[s.customerName] = (custMap[s.customerName] || 0) + (s.totalAmount ?? 0);
         });
         return Object.entries(custMap)
             .map(([name, total]) => ({ name, total }))
             .sort((a, b) => b.total - a.total)
             .slice(0, 5);
-    }, [state.sales]);
+    }, [filteredSales]);
 
     const tooltipStyle = {
         backgroundColor: isDark ? '#1E293B' : '#FFFFFF',

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Moon, Sun, Download, Upload, Trash2, Database, Shield, Info, ChevronRight, AlertTriangle, FileText, ClipboardList, Bell } from 'lucide-react';
+import { Settings, Moon, Sun, Download, Upload, Trash2, Database, Shield, Info, ChevronRight, AlertTriangle, FileText, ClipboardList, Bell, Folder } from 'lucide-react';
 import { useApp, useAuth } from '../context';
 import { useTheme } from '../theme';
 import storage, { INDIAN_STATES } from '../utils/storage';
@@ -118,6 +118,18 @@ const SettingsScreen: React.FC = () => {
     };
 
     const showNotif = (msg: string) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); };
+
+    const handleSelectBackupFolder = async () => {
+        if (window.electronAPI && window.electronAPI.selectDirectory) {
+            const folder = await window.electronAPI.selectDirectory();
+            if (folder) {
+                updateSettings({ autoBackupPath: folder });
+                showNotif('Backup folder path updated');
+            }
+        } else {
+            alert('Folder selection is only supported when running inside the Desktop Application.');
+        }
+    };
 
     const handleExport = () => {
         const exportData = {
@@ -606,6 +618,19 @@ const SettingsScreen: React.FC = () => {
                         <span className="toggle-slider"></span>
                     </label>
                 </div>
+                {state.settings.autoBackupEnabled && (
+                    <div className="flex flex-between animate-fade-in" style={{ padding: '1rem 0', borderBottom: '1px solid var(--color-border-light)' }}>
+                        <div style={{ flex: 1, marginRight: '1rem' }}>
+                            <div style={{ fontWeight: 500 }}>Backup Folder Path</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', wordBreak: 'break-all', marginTop: '0.2rem' }}>
+                                {state.settings.autoBackupPath || 'No folder selected'}
+                            </div>
+                        </div>
+                        <button className="btn btn-secondary" onClick={handleSelectBackupFolder} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Folder size={16} /> Select Folder
+                        </button>
+                    </div>
+                )}
                 <div className="flex flex-between" style={{ padding: '1rem 0', borderBottom: '1px solid var(--color-border-light)' }}>
                     <div><div style={{ fontWeight: 500 }}>Export Backup Manual</div><div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>Download all your data as a secure MathNote Backup (.mathnote) file</div></div>
                     <button className="btn btn-secondary" onClick={handleExport}><Download size={16} />Export Backup</button>

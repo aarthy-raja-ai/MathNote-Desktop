@@ -14,6 +14,7 @@ const TABLE_MAP: Record<string, string> = {
     '@mathnote_attendance': 'attendance',
     '@mathnote_users': 'users',
     '@mathnote_auth': 'business_profile',
+    '@mathnote_companies': 'companies',
 };
 
 const formatPayload = (obj: any): any => {
@@ -25,6 +26,10 @@ const formatPayload = (obj: any): any => {
     if ('createdAt' in formatted) {
         formatted.created_at = formatted.createdAt;
         delete formatted.createdAt;
+    }
+    if ('companyId' in formatted) {
+        formatted.company_id = formatted.companyId;
+        delete formatted.companyId;
     }
     if ('_synced' in formatted) {
         delete formatted._synced;
@@ -41,6 +46,10 @@ const parsePayload = (obj: any): any => {
     if ('created_at' in parsed) {
         parsed.createdAt = parsed.created_at;
         delete parsed.created_at;
+    }
+    if ('company_id' in parsed) {
+        parsed.companyId = parsed.company_id;
+        delete parsed.company_id;
     }
     parsed._synced = true;
     return parsed;

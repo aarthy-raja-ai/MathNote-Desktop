@@ -2,6 +2,8 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
 
+let isQuitting = false;
+
 // vite-plugin-electron injects VITE_DEV_SERVER_URL at build time
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 
@@ -37,6 +39,13 @@ function createWindow() {
     win.once('ready-to-show', () => {
         win.show()
     })
+
+    win.on('close', (e) => {
+        if (!isQuitting) {
+            e.preventDefault();
+            win.webContents.send('app-closing');
+        }
+    });
 
     if (VITE_DEV_SERVER_URL) {
         win.loadURL(VITE_DEV_SERVER_URL)
@@ -135,4 +144,39 @@ ipcMain.handle('export-pdf', async (event, fileName: string, htmlContent: string
         console.error('Failed to export PDF:', error);
         return { success: false, error: (error as Error).message };
     }
+});
+
+// IPC handler for selecting directory
+ipcMain.handle('select-directory', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return null;
+    const { filePaths } = await dialog.showOpenDialog(win, {
+        properties: ['openDirectory']
+    });
+    return filePaths[0] || null;
+});
+
+// IPC handler for saving backup to custom path
+ipcMain.handle('save-backup-to-path', async (_event, folderPath: string, data: string) => {
+    try {
+        if (!fs.existsSync(folderPath)) {
+            fs.mkdirSync(folderPath, { recursive: true });
+        }
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0];
+        const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+        const fileName = `MathNote_AutoBackup_${dateStr}_${timeStr}.json`;
+        const filePath = path.join(folderPath, fileName);
+        fs.writeFileSync(filePath, data);
+        return { success: true, path: filePath };
+    } catch (error) {
+        console.error('Failed to save backup to custom path:', error);
+        return { success: false, error: (error as Error).message };
+    }
+});
+
+ipcMain.on('confirm-close', () => {
+    isQuitting = true;
+    const wins = BrowserWindow.getAllWindows();
+    wins.forEach(w => w.close());
 });

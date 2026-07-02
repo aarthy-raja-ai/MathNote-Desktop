@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { Receipt, Plus, Search, Trash2, Edit, X, Calendar, Filter, ArrowRight, DollarSign } from 'lucide-react';
 import { useApp } from '../context';
+import { getFinancialYear } from '../utils/fyHelpers';
 
 const CATEGORIES = ['Food', 'Transport', 'Utilities', 'Rent', 'Salaries', 'Purchase', 'Marketing', 'Maintenance', 'Other'];
 
 const ExpensesScreen: React.FC = () => {
-    const { state, addExpense, updateExpense, deleteExpense } = useApp();
+    const { state, addExpense, updateExpense, deleteExpense, selectedFY, selectedCompanyId } = useApp();
     const currency = state.settings.currency || '₹';
     const fmt = (n: number) => `${currency}${n.toLocaleString('en-IN')}`;
 
@@ -27,7 +28,7 @@ const ExpensesScreen: React.FC = () => {
     });
 
     const filtered = useMemo(() => {
-        let list = [...state.expenses].reverse();
+        let list = [...state.expenses].filter(e => getFinancialYear(e.date) === selectedFY && (e.companyId || 'default') === selectedCompanyId).reverse();
         if (search) {
             const s = search.toLowerCase();
             list = list.filter(e =>
@@ -40,7 +41,7 @@ const ExpensesScreen: React.FC = () => {
         if (dateRange.start) list = list.filter(e => e.date >= dateRange.start);
         if (dateRange.end) list = list.filter(e => e.date <= dateRange.end);
         return list;
-    }, [state.expenses, search, filterCat, dateRange]);
+    }, [state.expenses, search, filterCat, dateRange, selectedFY, selectedCompanyId]);
 
     const totalExpenses = filtered.reduce((s, e) => s + e.amount, 0);
 

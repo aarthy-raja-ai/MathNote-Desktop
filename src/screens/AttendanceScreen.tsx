@@ -12,15 +12,15 @@ const STATUS_CONFIG: Record<Attendance['status'], { label: string; color: string
 };
 
 const AttendanceScreen: React.FC = () => {
-    const { state, markAttendance, deleteAttendance } = useApp();
+    const { state, markAttendance, deleteAttendance, selectedCompanyId } = useApp();
 
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [activeTab, setActiveTab] = useState<'mark' | 'report'>('mark');
 
     // Get staff users
     const staffUsers = useMemo(() => {
-        return state.contacts.filter(c => c.type === 'staff' || c.type === 'employee');
-    }, [state.contacts]);
+        return state.contacts.filter(c => (c.companyId || 'default') === selectedCompanyId && (c.type === 'staff' || c.type === 'employee'));
+    }, [state.contacts, selectedCompanyId]);
 
     // All users from app users list (people with roles)
     const appUsers = useMemo(() => {
@@ -41,8 +41,8 @@ const AttendanceScreen: React.FC = () => {
 
     // Today's attendance records
     const todayRecords = useMemo(() => {
-        return state.attendance.filter(a => a.date === selectedDate);
-    }, [state.attendance, selectedDate]);
+        return state.attendance.filter(a => a.date === selectedDate && (a.companyId || 'default') === selectedCompanyId);
+    }, [state.attendance, selectedDate, selectedCompanyId]);
 
     const getStatus = (staffId: string): Attendance['status'] | null => {
         const record = todayRecords.find(r => r.staffId === staffId);
@@ -63,8 +63,8 @@ const AttendanceScreen: React.FC = () => {
     // Monthly report data
     const currentMonth = selectedDate.substring(0, 7); // YYYY-MM
     const monthRecords = useMemo(() => {
-        return state.attendance.filter(a => a.date.startsWith(currentMonth));
-    }, [state.attendance, currentMonth]);
+        return state.attendance.filter(a => a.date.startsWith(currentMonth) && (a.companyId || 'default') === selectedCompanyId);
+    }, [state.attendance, currentMonth, selectedCompanyId]);
 
     const monthStats = useMemo(() => {
         const stats: Record<string, { present: number; absent: number; halfDay: number; late: number; name: string }> = {};

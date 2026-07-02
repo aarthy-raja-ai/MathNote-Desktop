@@ -4,10 +4,11 @@ import {
     LayoutDashboard, ShoppingCart, Receipt, CreditCard,
     Package, FileBarChart, Settings, Users, ShoppingBag,
     Moon, Sun, TrendingUp, LogOut, UserCog,
-    FileText, ClipboardList, Calendar
+    FileText, ClipboardList, Calendar, Building
 } from 'lucide-react';
 import { useTheme } from '../theme';
 import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 
 const navItems = [
     { section: 'Overview' },
@@ -24,6 +25,7 @@ const navItems = [
     { path: '/inventory', icon: Package, label: 'Inventory' },
     { path: '/contacts', icon: Users, label: 'Contacts' },
     { path: '/attendance', icon: Calendar, label: 'Attendance' },
+    { path: '/companies', icon: Building, label: 'Companies', ownerOnly: true },
     { path: '/user-manager', icon: UserCog, label: 'User Manager', ownerOnly: true },
     { section: 'Insights' },
     { path: '/reports', icon: FileBarChart, label: 'Reports' },
@@ -32,6 +34,7 @@ const navItems = [
 const Sidebar: React.FC = () => {
     const { isDark, toggleTheme } = useTheme();
     const { auth, logout, canManageUsers } = useAuth();
+    const { selectedFY, setSelectedFY, availableFYs, selectedCompanyId, setSelectedCompanyId, state: { companies } } = useApp();
     const location = useLocation();
 
     return (
@@ -59,6 +62,64 @@ const Sidebar: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* Company & Financial Year Switchers */}
+            <div style={{
+                padding: '0.75rem 1rem',
+                borderBottom: '1px solid var(--color-border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem'
+            }}>
+                {/* Company Switcher */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontWeight: 600 }}>Active Company</label>
+                    <select
+                        value={selectedCompanyId}
+                        onChange={(e) => setSelectedCompanyId(e.target.value)}
+                        style={{
+                            width: '100%',
+                            padding: '0.4rem 0.5rem',
+                            borderRadius: '4px',
+                            background: 'var(--color-bg-light)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text)',
+                            fontSize: '0.85rem',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <option value="default">Default Company</option>
+                        {companies.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                    </select>
+                </div>
+
+                {/* Financial Year Switcher */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontWeight: 600 }}>Financial Year</label>
+                    <select
+                        value={selectedFY}
+                        onChange={(e) => setSelectedFY(e.target.value)}
+                        style={{
+                            width: '100%',
+                            padding: '0.4rem 0.5rem',
+                            borderRadius: '4px',
+                            background: 'var(--color-bg-light)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text)',
+                            fontSize: '0.85rem',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        {availableFYs.map(fy => (
+                            <option key={fy} value={fy}>FY {fy}</option>
+                        ))}
+                    </select>
+                </div>
+            </div>
 
             <nav className="sidebar-nav">
                 {navItems.map((item, i) => {

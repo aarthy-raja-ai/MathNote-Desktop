@@ -4,7 +4,7 @@ import { Package, Plus, Search, Trash2, Edit, X, AlertTriangle, BarChart3, Trend
 import { useApp } from '../context';
 
 const InventoryScreen: React.FC = () => {
-    const { state, addProduct, updateProduct, deleteProduct } = useApp();
+    const { state, addProduct, updateProduct, deleteProduct, selectedCompanyId } = useApp();
     const location = useLocation();
     const currency = state.settings.currency || '₹';
     const fmt = (n: number) => `${currency}${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -16,23 +16,24 @@ const InventoryScreen: React.FC = () => {
     const [form, setForm] = useState({ category: '', brand: '', name: '', price: '', costPrice: '', stock: '', sku: '', barcode: '', unit: 'pcs', lowStockThreshold: '5', taxRate: '18' });
 
     const filtered = useMemo(() => {
-        let list = [...state.products];
+        let list = [...state.products].filter(p => (p.companyId || 'default') === selectedCompanyId);
         if (search) list = list.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase()) || p.barcode?.toLowerCase().includes(search.toLowerCase()));
         if (filterCategory !== 'all') list = list.filter(p => (p.category || 'Uncategorized') === filterCategory);
         return list.sort((a, b) => a.name.localeCompare(b.name));
-    }, [state.products, search, filterCategory]);
+    }, [state.products, search, filterCategory, selectedCompanyId]);
 
     const categories = useMemo(() => {
-        const cats = new Set(state.products.map(p => p.category || 'Uncategorized'));
+        const cats = new Set(state.products.filter(p => (p.companyId || 'default') === selectedCompanyId).map(p => p.category || 'Uncategorized'));
         return ['all', ...Array.from(cats).sort()];
-    }, [state.products]);
+    }, [state.products, selectedCompanyId]);
 
     // Summary stats
-    const lowStock = state.products.filter(p => p.stock <= (p.lowStockThreshold || 5));
-    const outOfStock = state.products.filter(p => p.stock === 0);
-    const totalSellingValue = state.products.reduce((s, p) => s + p.price * p.stock, 0);
-    const totalCostValue = state.products.reduce((s, p) => s + (p.costPrice || 0) * p.stock, 0);
-    const totalItems = state.products.reduce((s, p) => s + p.stock, 0);
+    const companyProducts = useMemo(() => state.products.filter(p => (p.companyId || 'default') === selectedCompanyId), [state.products, selectedCompanyId]);
+    const lowStock = companyProducts.filter(p => p.stock <= (p.lowStockThreshold || 5));
+    const outOfStock = companyProducts.filter(p => p.stock === 0);
+    const totalSellingValue = companyProducts.reduce((s, p) => s + p.price * p.stock, 0);
+    const totalCostValue = companyProducts.reduce((s, p) => s + (p.costPrice || 0) * p.stock, 0);
+    const totalItems = companyProducts.reduce((s, p) => s + p.stock, 0);
     const potentialProfit = totalSellingValue - totalCostValue;
 
     const openEdit = (p: typeof state.products[0]) => {

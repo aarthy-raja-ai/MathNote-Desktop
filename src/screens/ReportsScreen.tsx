@@ -13,7 +13,7 @@ const CHART_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#E
 type Range = 'today' | 'yesterday' | 'week' | 'month' | 'year' | 'custom' | 'all';
 
 const ReportsScreen: React.FC = () => {
-    const { state } = useApp();
+    const { state, selectedCompanyId } = useApp();
     const { isDark } = useTheme();
     const currency = state.settings.currency || '₹';
     const fmt = (n: number) => `${currency}${Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -24,11 +24,12 @@ const ReportsScreen: React.FC = () => {
         end: new Date().toISOString().split('T')[0]
     });
 
-    const filterByRange = <T extends { date: string }>(arr: T[]): T[] => {
+    const filterByRange = <T extends { date: string; companyId?: string }>(arr: T[]): T[] => {
         const now = new Date();
         const today = now.toISOString().split('T')[0];
 
         return arr.filter(item => {
+            if ((item.companyId || 'default') !== selectedCompanyId) return false;
             if (range === 'all') return true;
             if (range === 'today') return item.date === today;
             if (range === 'yesterday') {
@@ -51,9 +52,9 @@ const ReportsScreen: React.FC = () => {
         });
     };
 
-    const sales = useMemo(() => filterByRange(state.sales), [state.sales, range, customRange]);
-    const expenses = useMemo(() => filterByRange(state.expenses), [state.expenses, range, customRange]);
-    const credits = useMemo(() => filterByRange(state.credits), [state.credits, range, customRange]);
+    const sales = useMemo(() => filterByRange(state.sales), [state.sales, range, customRange, selectedCompanyId]);
+    const expenses = useMemo(() => filterByRange(state.expenses), [state.expenses, range, customRange, selectedCompanyId]);
+    const credits = useMemo(() => filterByRange(state.credits), [state.credits, range, customRange, selectedCompanyId]);
 
     const totalSales = sales.reduce((s, e) => s + (e.totalAmount ?? 0), 0);
     const totalExpenses = expenses.reduce((s, e) => s + (e.amount ?? 0), 0);

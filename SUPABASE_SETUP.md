@@ -1,6 +1,6 @@
 # Supabase Setup Guide for MathNote Sync
 
-To enable real-time sync between your Desktop and Mobile apps, you need to set up a Supabase project with following tables.
+To enable real-time sync between your Desktop and Mobile apps, you need to set up a Supabase project with the following tables.
 
 ## 1. Create Tables
 Run this SQL in your Supabase SQL Editor:
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS sales (
   "taxMode" TEXT,
   "returnIds" JSONB,
   "linkedCreditId" TEXT,
+  company_id TEXT DEFAULT 'default',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS products (
   unit TEXT,
   "lowStockThreshold" NUMERIC,
   "taxRate" NUMERIC,
+  company_id TEXT DEFAULT 'default',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -63,6 +65,7 @@ CREATE TABLE IF NOT EXISTS contacts (
   state TEXT,
   gstin TEXT,
   type TEXT,
+  company_id TEXT DEFAULT 'default',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -76,6 +79,7 @@ CREATE TABLE IF NOT EXISTS expenses (
   "vendorName" TEXT,
   "vendorId" TEXT,
   "paymentMethod" TEXT,
+  company_id TEXT DEFAULT 'default',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -93,6 +97,7 @@ CREATE TABLE IF NOT EXISTS credits (
   "linkedSaleId" TEXT,
   "linkedPurchaseId" TEXT,
   payments JSONB,
+  company_id TEXT DEFAULT 'default',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -106,6 +111,7 @@ CREATE TABLE IF NOT EXISTS returns (
   note TEXT,
   items JSONB,
   "linkedCreditId" TEXT,
+  company_id TEXT DEFAULT 'default',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -126,6 +132,7 @@ CREATE TABLE IF NOT EXISTS purchases (
   sgst NUMERIC,
   igst NUMERIC,
   "gstRate" NUMERIC,
+  company_id TEXT DEFAULT 'default',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -155,6 +162,7 @@ CREATE TABLE IF NOT EXISTS quotations (
   status TEXT,
   "convertedSaleId" TEXT,
   note TEXT,
+  company_id TEXT DEFAULT 'default',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -177,6 +185,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   status TEXT,
   "convertedPurchaseId" TEXT,
   note TEXT,
+  company_id TEXT DEFAULT 'default',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -188,6 +197,7 @@ CREATE TABLE IF NOT EXISTS attendance (
   date DATE,
   status TEXT,
   note TEXT,
+  company_id TEXT DEFAULT 'default',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -199,6 +209,7 @@ CREATE TABLE IF NOT EXISTS users (
   password TEXT, -- hashed password for Desktop
   pin TEXT,      -- pin code for Mobile
   role TEXT NOT NULL,
+  company_id TEXT DEFAULT 'default',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -221,11 +232,21 @@ CREATE TABLE IF NOT EXISTS business_profile (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Enable Realtime for all 12 tables (using a safe DO block to prevent errors if already added)
+-- 13. Companies Table
+CREATE TABLE IF NOT EXISTS companies (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  address TEXT,
+  phone TEXT,
+  gstin TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Realtime for all 13 tables (using a safe DO block to prevent errors if already added)
 DO $$
 DECLARE
     tbl TEXT;
-    tbls TEXT[] := ARRAY['sales', 'products', 'contacts', 'expenses', 'credits', 'returns', 'purchases', 'quotations', 'purchase_orders', 'attendance', 'users', 'business_profile'];
+    tbls TEXT[] := ARRAY['sales', 'products', 'contacts', 'expenses', 'credits', 'returns', 'purchases', 'quotations', 'purchase_orders', 'attendance', 'users', 'business_profile', 'companies'];
 BEGIN
     FOREACH tbl IN ARRAY tbls LOOP
         IF NOT EXISTS (
@@ -259,11 +280,12 @@ ALTER TABLE purchase_orders DISABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance DISABLE ROW LEVEL SECURITY;
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE business_profile DISABLE ROW LEVEL SECURITY;
+ALTER TABLE companies DISABLE ROW LEVEL SECURITY;
 ```
 
 ### OPTION B: Enable RLS and add public access policies (For production environments)
 ```sql
--- Enable RLS for all 12 tables
+-- Enable RLS for all 13 tables
 ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
@@ -276,6 +298,7 @@ ALTER TABLE purchase_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE business_profile ENABLE ROW LEVEL SECURITY;
+ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
 
 -- Add open public read/write access policies for sync
 CREATE POLICY "Allow all access" ON sales FOR ALL USING (true) WITH CHECK (true);
@@ -290,16 +313,30 @@ CREATE POLICY "Allow all access" ON purchase_orders FOR ALL USING (true) WITH CH
 CREATE POLICY "Allow all access" ON attendance FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access" ON users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access" ON business_profile FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access" ON companies FOR ALL USING (true) WITH CHECK (true);
 ```
 
 ## 3. Existing Database Migration Script
-If you created the database tables previously and need to migrate them to support the updated sync format (renaming `"createdAt"` to `created_at` and adding missing columns like `"linkedCreditId"`), run the following query in your Supabase **SQL Editor**:
+If you created the database tables previously and need to migrate them to support the updated sync format (renaming `"createdAt"` to `created_at` and adding missing columns like `"linkedCreditId"` or `"company_id"`), run the following query in your Supabase **SQL Editor**:
 
 ```sql
 -- 1. Add missing linkedCreditId to sales
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS "linkedCreditId" TEXT;
 
--- 2. Migrate createdAt columns to snake_case created_at across all tables
+-- 2. Add missing company_id columns to partitioned tables
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS company_id TEXT DEFAULT 'default';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS company_id TEXT DEFAULT 'default';
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS company_id TEXT DEFAULT 'default';
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS company_id TEXT DEFAULT 'default';
+ALTER TABLE credits ADD COLUMN IF NOT EXISTS company_id TEXT DEFAULT 'default';
+ALTER TABLE returns ADD COLUMN IF NOT EXISTS company_id TEXT DEFAULT 'default';
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS company_id TEXT DEFAULT 'default';
+ALTER TABLE quotations ADD COLUMN IF NOT EXISTS company_id TEXT DEFAULT 'default';
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS company_id TEXT DEFAULT 'default';
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS company_id TEXT DEFAULT 'default';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id TEXT DEFAULT 'default';
+
+-- 3. Migrate createdAt columns to snake_case created_at across all tables
 DO $$
 DECLARE
     tbl RECORD;

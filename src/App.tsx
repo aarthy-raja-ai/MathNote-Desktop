@@ -54,6 +54,7 @@ const SettingsScreen = lazy(() => import('./screens/SettingsScreen'));
 const Contacts = lazy(() => import('./screens/ContactsScreen'));
 const Purchases = lazy(() => import('./screens/PurchasesScreen'));
 const UserManager = lazy(() => import('./screens/UserManagerScreen'));
+const CompanyManager = lazy(() => import('./screens/CompanyManagerScreen'));
 const Quotations = lazy(() => import('./screens/QuotationScreen'));
 const PurchaseOrders = lazy(() => import('./screens/PurchaseOrderScreen'));
 const Attendance = lazy(() => import('./screens/AttendanceScreen'));
@@ -128,6 +129,7 @@ const AuthGate: React.FC = () => {
                         <Route path="/invoice-preview/:type/:id" element={<InvoicePreview />} />
                         <Route path="/reports" element={<Reports />} />
                         <Route path="/settings" element={<SettingsScreen />} />
+                        <Route path="/companies" element={<CompanyManager />} />
                         <Route path="/user-manager" element={<UserManager />} />
                     </Routes>
                 </Suspense>

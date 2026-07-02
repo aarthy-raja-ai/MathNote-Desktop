@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
-import storage, { Sale, Expense, Credit, Settings, CreditPayment, Contact, Product, SaleItem, SaleReturn, Purchase, Quotation, PurchaseOrder, Attendance } from '../utils/storage';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback, useMemo } from 'react';
+import storage, { Sale, Expense, Credit, Settings, CreditPayment, Contact, Product, SaleItem, SaleReturn, Purchase, Quotation, PurchaseOrder, Attendance, Company } from '../utils/storage';
 import { syncService } from '../services/syncService';
 import { resetSupabaseClient } from '../services/supabaseClient';
+import { getFinancialYear, getAvailableFYs } from '../utils/fyHelpers';
 
 interface AppState {
     sales: Sale[];
@@ -15,6 +16,7 @@ interface AppState {
     quotations: Quotation[];
     purchaseOrders: PurchaseOrder[];
     attendance: Attendance[];
+    companies: Company[];
     isLoading: boolean;
 }
 
@@ -116,6 +118,14 @@ interface AppContextType {
     updateSettings: (updates: Partial<Settings>) => Promise<void>;
     clearAllData: () => Promise<boolean>;
     restoreData: (data: Record<string, unknown>) => Promise<boolean>;
+    selectedFY: string;
+    setSelectedFY: (fy: string) => void;
+    availableFYs: string[];
+    selectedCompanyId: string;
+    setSelectedCompanyId: (id: string) => void;
+    addCompany: (company: Omit<Company, 'id' | 'createdAt'>) => Promise<void>;
+    updateCompany: (id: string, updates: Partial<Company>) => Promise<void>;
+    deleteCompany: (id: string) => Promise<void>;
     getTodaySales: () => number;
     getTodayExpenses: () => number;
     getTodayProfit: () => number;
@@ -139,6 +149,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         quotations: [],
         purchaseOrders: [],
         attendance: [],
+        companies: [],
         isLoading: true,
     });
 
@@ -146,6 +157,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     stateRef.current = state;
 
     const [syncTrigger, setSyncTrigger] = useState(0);
+    const [selectedCompanyId, setSelectedCompanyId] = useState<string>('default');
+    const [selectedFY, setSelectedFY] = useState<string>(getFinancialYear());
+    const availableFYs = useMemo(() => {
+        return getAvailableFYs(state.sales, state.purchases, state.expenses);
+    }, [state.sales, state.purchases, state.expenses]);
 
     useEffect(() => {
         storage.onSet = (key, value) => {
@@ -160,7 +176,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         const loadData = async () => {
             // First, load from local storage for immediate UI
-            const [sales, expenses, credits, settings, contacts, products, returns, purchases, quotations, purchaseOrders, attendance] = await Promise.all([
+            const [sales, expenses, credits, settings, contacts, products, returns, purchases, quotations, purchaseOrders, attendance, companies] = await Promise.all([
                 storage.getSales(),
                 storage.getExpenses(),
                 storage.getCredits(),
@@ -172,6 +188,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 storage.getQuotations(),
                 storage.getPurchaseOrders(),
                 storage.getAttendance(),
+                storage.getCompanies(),
             ]);
 
             const localData = {
@@ -186,9 +203,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 quotations: quotations || [],
                 purchaseOrders: purchaseOrders || [],
                 attendance: attendance || [],
+                companies: companies || [],
                 isLoading: false,
             };
             setState(localData);
+
+            if (companies && companies.length > 0) {
+                setSelectedCompanyId(companies[0].id);
+            }
 
             // Then, try to sync from cloud if configured
             try {
@@ -206,6 +228,43 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }
         };
         loadData();
+    }, []);
+
+    // Set up auto-backup on close listener (Desktop Electron)
+    useEffect(() => {
+        if (window.electronAPI) {
+            const handleAppClosing = async () => {
+                const currentSettings = stateRef.current.settings;
+                if (currentSettings.autoBackupEnabled && currentSettings.autoBackupPath) {
+                    try {
+                        const backupData = {
+                            sales: stateRef.current.sales,
+                            expenses: stateRef.current.expenses,
+                            credits: stateRef.current.credits,
+                            settings: stateRef.current.settings,
+                            contacts: stateRef.current.contacts,
+                            products: stateRef.current.products,
+                            returns: stateRef.current.returns,
+                            purchases: stateRef.current.purchases,
+                            quotations: stateRef.current.quotations,
+                            purchaseOrders: stateRef.current.purchaseOrders,
+                            attendance: stateRef.current.attendance,
+                            companies: stateRef.current.companies
+                        };
+                        const payloadString = JSON.stringify(backupData, null, 2);
+                        await window.electronAPI.saveBackupToPath(currentSettings.autoBackupPath, payloadString);
+                    } catch (err) {
+                        console.error('Failed to run auto backup on close:', err);
+                    }
+                }
+                window.electronAPI.confirmClose();
+            };
+
+            const unsubscribe = window.electronAPI.onAppClosing(handleAppClosing);
+            return () => {
+                unsubscribe();
+            };
+        }
     }, []);
 
     // Set up real-time subscription
@@ -274,6 +333,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             linkedCreditId = generateId();
             newCredits.push({
                 id: linkedCreditId,
+                companyId: selectedCompanyId,
                 party: saleInput.customerName,
                 type: 'given',
                 amount: remainingAmount,
@@ -288,6 +348,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         const newSale: Sale = {
             id: saleId,
+            companyId: selectedCompanyId,
             date: getToday(),
             customerName: saleInput.customerName,
             customerState: saleInput.customerState,
@@ -326,7 +387,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
 
         setState(prev => ({ ...prev, sales: newSales, credits: newCredits, products: updatedProducts }));
-    }, []);
+    }, [selectedCompanyId]);
 
     const updateSale = useCallback(async (id: string, updates: Partial<Sale>) => {
         const newSales = stateRef.current.sales.map(s => (s.id === id ? { ...s, ...updates } : s));
@@ -350,11 +411,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // --- Expenses ---
     const addExpense = useCallback(async (expense: Omit<Expense, 'id'>) => {
-        const newExpense: Expense = { ...expense, id: generateId(), paymentMethod: expense.paymentMethod || 'Cash' };
+        const newExpense: Expense = { ...expense, id: generateId(), companyId: selectedCompanyId, paymentMethod: expense.paymentMethod || 'Cash' };
         const newExpenses = [...stateRef.current.expenses, newExpense];
         await storage.setExpenses(newExpenses);
         setState(prev => ({ ...prev, expenses: newExpenses }));
-    }, []);
+    }, [selectedCompanyId]);
 
     const updateExpense = useCallback(async (id: string, updates: Partial<Expense>) => {
         const newExpenses = stateRef.current.expenses.map(e => (e.id === id ? { ...e, ...updates } : e));
@@ -371,11 +432,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // --- Credits ---
     const addCredit = useCallback(async (credit: Omit<Credit, 'id' | 'paidAmount' | 'payments'>) => {
-        const newCredit: Credit = { ...credit, id: generateId(), paidAmount: 0, payments: [] };
+        const newCredit: Credit = { ...credit, id: generateId(), companyId: selectedCompanyId, paidAmount: 0, payments: [] };
         const newCredits = [...stateRef.current.credits, newCredit];
         await storage.setCredits(newCredits);
         setState(prev => ({ ...prev, credits: newCredits }));
-    }, []);
+    }, [selectedCompanyId]);
 
     const updateCredit = useCallback(async (id: string, updates: Partial<Credit>) => {
         const newCredits = stateRef.current.credits.map(c => {
@@ -413,11 +474,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // --- Contacts ---
     const addContact = useCallback(async (contactInput: Omit<Contact, 'id' | 'createdAt'>) => {
-        const newContact: Contact = { ...contactInput, id: generateId(), createdAt: new Date().toISOString() };
+        const newContact: Contact = { ...contactInput, id: generateId(), companyId: selectedCompanyId, createdAt: new Date().toISOString() };
         const newContacts = [...stateRef.current.contacts, newContact];
         await storage.setContacts(newContacts);
         setState(prev => ({ ...prev, contacts: newContacts }));
-    }, []);
+    }, [selectedCompanyId]);
 
     const updateContact = useCallback(async (id: string, updates: Partial<Contact>) => {
         const newContacts = stateRef.current.contacts.map(c => (c.id === id ? { ...c, ...updates } : c));
@@ -442,11 +503,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // --- Products ---
     const addProduct = useCallback(async (productInput: Omit<Product, 'id' | 'createdAt'>) => {
-        const newProduct: Product = { ...productInput, id: generateId(), createdAt: new Date().toISOString() };
+        const newProduct: Product = { ...productInput, id: generateId(), companyId: selectedCompanyId, createdAt: new Date().toISOString() };
         const newProducts = [...stateRef.current.products, newProduct];
         await storage.setProducts(newProducts);
         setState(prev => ({ ...prev, products: newProducts }));
-    }, []);
+    }, [selectedCompanyId]);
 
     const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
         const newProducts = stateRef.current.products.map(p => (p.id === id ? { ...p, ...updates } : p));
@@ -481,6 +542,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             linkedCreditId = generateId();
             newCredits.push({
                 id: linkedCreditId,
+                companyId: selectedCompanyId,
                 party: sale.customerName || 'Walk-in',
                 type: 'taken',
                 amount: returnAmount,
@@ -495,6 +557,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         const newReturn: SaleReturn = {
             id: generateId(),
+            companyId: selectedCompanyId,
             saleId: input.saleId,
             date: getToday(),
             party: sale.customerName,
@@ -524,7 +587,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         await storage.setSales(newSales);
 
         setState(prev => ({ ...prev, returns: newReturns, products: updatedProducts, credits: newCredits, sales: newSales }));
-    }, []);
+    }, [selectedCompanyId]);
 
     const deleteReturn = useCallback(async (id: string) => {
         const ret = stateRef.current.returns.find(r => r.id === id);
@@ -567,6 +630,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             linkedExpenseId = generateId();
             newExpenses.push({
                 id: linkedExpenseId,
+                companyId: selectedCompanyId,
                 date: getToday(),
                 category: 'Purchase',
                 amount: purchaseInput.paidAmount,
@@ -583,6 +647,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             linkedCreditId = generateId();
             newCredits.push({
                 id: linkedCreditId,
+                companyId: selectedCompanyId,
                 party: purchaseInput.vendorName,
                 type: 'taken',
                 amount: balance,
@@ -595,7 +660,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             await storage.setCredits(newCredits);
         }
 
-        const newPurchase: Purchase = { ...purchaseInput, id: purchaseId, linkedExpenseId, linkedCreditId };
+        const newPurchase: Purchase = { ...purchaseInput, id: purchaseId, companyId: selectedCompanyId, linkedExpenseId, linkedCreditId };
         const newPurchases = [...stateRef.current.purchases, newPurchase];
         await storage.setPurchases(newPurchases);
 
@@ -609,7 +674,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             await storage.setProducts(updatedProducts);
         }
         setState(prev => ({ ...prev, purchases: newPurchases, products: updatedProducts, expenses: newExpenses, credits: newCredits }));
-    }, []);
+    }, [selectedCompanyId]);
 
     const updatePurchase = useCallback(async (id: string, updates: Partial<Purchase>) => {
         const newPurchases = stateRef.current.purchases.map(p => (p.id === id ? { ...p, ...updates } : p));
@@ -652,11 +717,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // --- Quotations ---
     const addQuotation = useCallback(async (qInput: Omit<Quotation, 'id'>) => {
-        const newQ: Quotation = { ...qInput, id: generateId() };
+        const newQ: Quotation = { ...qInput, id: generateId(), companyId: selectedCompanyId };
         const newQs = [...stateRef.current.quotations, newQ];
         await storage.setQuotations(newQs);
         setState(prev => ({ ...prev, quotations: newQs }));
-    }, []);
+    }, [selectedCompanyId]);
 
     const updateQuotation = useCallback(async (id: string, updates: Partial<Quotation>) => {
         const newQs = stateRef.current.quotations.map(q => (q.id === id ? { ...q, ...updates } : q));
@@ -673,11 +738,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // --- Purchase Orders ---
     const addPurchaseOrder = useCallback(async (poInput: Omit<PurchaseOrder, 'id'>) => {
-        const newPO: PurchaseOrder = { ...poInput, id: generateId() };
+        const newPO: PurchaseOrder = { ...poInput, id: generateId(), companyId: selectedCompanyId };
         const newPOs = [...stateRef.current.purchaseOrders, newPO];
         await storage.setPurchaseOrders(newPOs);
         setState(prev => ({ ...prev, purchaseOrders: newPOs }));
-    }, []);
+    }, [selectedCompanyId]);
 
     const updatePurchaseOrder = useCallback(async (id: string, updates: Partial<PurchaseOrder>) => {
         const newPOs = stateRef.current.purchaseOrders.map(po => (po.id === id ? { ...po, ...updates } : po));
@@ -700,12 +765,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             if (existing >= 0) {
                 newAtt[existing] = { ...newAtt[existing], status: rec.status, note: rec.note };
             } else {
-                newAtt.push({ ...rec, id: generateId() });
+                newAtt.push({ ...rec, id: generateId(), companyId: selectedCompanyId });
             }
         }
         await storage.setAttendance(newAtt);
         setState(prev => ({ ...prev, attendance: newAtt }));
-    }, []);
+    }, [selectedCompanyId]);
 
     const deleteAttendance = useCallback(async (id: string) => {
         const newAtt = stateRef.current.attendance.filter(a => a.id !== id);
@@ -713,6 +778,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setState(prev => ({ ...prev, attendance: newAtt }));
         await syncService.delete('@mathnote_attendance', id).catch(err => console.error('[Sync] Attendance delete failed:', err));
     }, []);
+
+    // --- Companies ---
+    const addCompany = useCallback(async (companyInput: Omit<Company, 'id' | 'createdAt'>) => {
+        const companyId = generateId();
+        const newCompany: Company = {
+            ...companyInput,
+            id: companyId,
+            createdAt: new Date().toISOString(),
+        };
+        const newCompanies = [...stateRef.current.companies, newCompany];
+        await storage.setCompanies(newCompanies);
+        setState(prev => ({ ...prev, companies: newCompanies }));
+        if (stateRef.current.companies.length === 0) {
+            setSelectedCompanyId(companyId);
+        }
+    }, []);
+
+    const updateCompany = useCallback(async (id: string, updates: Partial<Company>) => {
+        const newCompanies = stateRef.current.companies.map(c => (c.id === id ? { ...c, ...updates } : c));
+        await storage.setCompanies(newCompanies);
+        setState(prev => ({ ...prev, companies: newCompanies }));
+    }, []);
+
+    const deleteCompany = useCallback(async (id: string) => {
+        const newCompanies = stateRef.current.companies.filter(c => c.id !== id);
+        await storage.setCompanies(newCompanies);
+        setState(prev => ({ ...prev, companies: newCompanies }));
+        if (selectedCompanyId === id) {
+            setSelectedCompanyId(newCompanies.length > 0 ? newCompanies[0].id : 'default');
+        }
+    }, [selectedCompanyId]);
 
     // --- Settings ---
     const updateSettings = useCallback(async (updates: Partial<Settings>) => {
@@ -728,7 +824,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 sales: [], expenses: [], credits: [], settings: defaultSettings,
                 contacts: [], products: [], returns: [], purchases: [],
                 quotations: [], purchaseOrders: [], attendance: [],
-                isLoading: false,
+                companies: [], isLoading: false,
             });
         }
         return success;
@@ -749,6 +845,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 quotations: (data.quotations as Quotation[]) || [],
                 purchaseOrders: (data.purchaseOrders as PurchaseOrder[]) || [],
                 attendance: (data.attendance as Attendance[]) || [],
+                companies: (data.companies as Company[]) || [],
                 isLoading: false,
             });
         }
@@ -758,53 +855,53 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // --- Computed values ---
     const getTodaySales = useCallback(() => {
         const today = getToday();
-        return state.sales.filter(s => s.date === today).reduce((sum, s) => sum + (s.totalAmount ?? 0), 0);
-    }, [state.sales]);
+        return state.sales.filter(s => (s.companyId || 'default') === selectedCompanyId && getFinancialYear(s.date) === selectedFY && s.date === today).reduce((sum, s) => sum + (s.totalAmount ?? 0), 0);
+    }, [state.sales, selectedFY, selectedCompanyId]);
 
     const getTodayExpenses = useCallback(() => {
         const today = getToday();
-        return state.expenses.filter(e => e.date === today).reduce((sum, e) => sum + (e.amount ?? 0), 0);
-    }, [state.expenses]);
+        return state.expenses.filter(e => (e.companyId || 'default') === selectedCompanyId && getFinancialYear(e.date) === selectedFY && e.date === today).reduce((sum, e) => sum + (e.amount ?? 0), 0);
+    }, [state.expenses, selectedFY, selectedCompanyId]);
 
     const getTodayProfit = useCallback(() => {
         const today = getToday();
-        return state.sales.filter(s => s.date === today).reduce((totalProfit, sale) => {
+        return state.sales.filter(s => (s.companyId || 'default') === selectedCompanyId && getFinancialYear(s.date) === selectedFY && s.date === today).reduce((totalProfit, sale) => {
             const subtotal = sale.subtotal || sale.totalAmount || 0;
             const discount = sale.discountTotal || 0;
             const cost = (sale.items || []).reduce((sum, item) => sum + ((item.costPrice || 0) * item.quantity), 0);
             return totalProfit + (subtotal - discount - cost);
         }, 0);
-    }, [state.sales]);
+    }, [state.sales, selectedFY, selectedCompanyId]);
 
     const getBalance = useCallback(() => {
-        const totalSales = state.sales.reduce((sum, s) => sum + (s.paidAmount ?? s.totalAmount ?? 0), 0);
-        const totalExpenses = state.expenses.reduce((sum, e) => sum + (e.amount ?? 0), 0);
-        const creditReceived = state.credits.filter(c => c.type === 'given').reduce((sum, c) => sum + (c.paidAmount ?? 0), 0);
-        const creditPaid = state.credits.filter(c => c.type === 'taken').reduce((sum, c) => sum + (c.paidAmount ?? 0), 0);
-        const totalReturns = state.returns.reduce((sum, r) => sum + (r.amount ?? 0), 0);
-        const totalPurchases = state.purchases.reduce((sum, p) => sum + (p.paidAmount ?? 0), 0);
+        const totalSales = state.sales.filter(s => (s.companyId || 'default') === selectedCompanyId && getFinancialYear(s.date) === selectedFY).reduce((sum, s) => sum + (s.paidAmount ?? s.totalAmount ?? 0), 0);
+        const totalExpenses = state.expenses.filter(e => (e.companyId || 'default') === selectedCompanyId && getFinancialYear(e.date) === selectedFY).reduce((sum, e) => sum + (e.amount ?? 0), 0);
+        const creditReceived = state.credits.filter(c => (c.companyId || 'default') === selectedCompanyId && getFinancialYear(c.date) === selectedFY && c.type === 'given').reduce((sum, c) => sum + (c.paidAmount ?? 0), 0);
+        const creditPaid = state.credits.filter(c => (c.companyId || 'default') === selectedCompanyId && getFinancialYear(c.date) === selectedFY && c.type === 'taken').reduce((sum, c) => sum + (c.paidAmount ?? 0), 0);
+        const totalReturns = state.returns.filter(r => (r.companyId || 'default') === selectedCompanyId && getFinancialYear(r.date) === selectedFY).reduce((sum, r) => sum + (r.amount ?? 0), 0);
+        const totalPurchases = state.purchases.filter(p => (p.companyId || 'default') === selectedCompanyId && getFinancialYear(p.date) === selectedFY).reduce((sum, p) => sum + (p.paidAmount ?? 0), 0);
         return totalSales + creditReceived - totalExpenses - creditPaid - totalReturns - totalPurchases;
-    }, [state.sales, state.expenses, state.credits, state.returns, state.purchases]);
+    }, [state.sales, state.expenses, state.credits, state.returns, state.purchases, selectedFY, selectedCompanyId]);
 
     const getCashBalance = useCallback(() => {
-        const salesCash = state.sales.filter(s => s.paymentMethod === 'Cash').reduce((sum, s) => sum + (s.paidAmount ?? s.totalAmount ?? 0), 0);
-        const expensesCash = state.expenses.filter(e => e.paymentMethod === 'Cash' || !e.paymentMethod).reduce((sum, e) => sum + (e.amount ?? 0), 0);
-        const creditReceivedCash = state.credits.filter(c => c.type === 'given').reduce((sum, c) => {
+        const salesCash = state.sales.filter(s => (s.companyId || 'default') === selectedCompanyId && getFinancialYear(s.date) === selectedFY && s.paymentMethod === 'Cash').reduce((sum, s) => sum + (s.paidAmount ?? s.totalAmount ?? 0), 0);
+        const expensesCash = state.expenses.filter(e => (e.companyId || 'default') === selectedCompanyId && getFinancialYear(e.date) === selectedFY && (e.paymentMethod === 'Cash' || !e.paymentMethod)).reduce((sum, e) => sum + (e.amount ?? 0), 0);
+        const creditReceivedCash = state.credits.filter(c => (c.companyId || 'default') === selectedCompanyId && getFinancialYear(c.date) === selectedFY && c.type === 'given').reduce((sum, c) => {
             const cashPayments = c.payments?.filter(p => p.paymentMode === 'Cash') || [];
             return sum + cashPayments.reduce((pSum, p) => pSum + p.amount, 0);
         }, 0);
         return salesCash + creditReceivedCash - expensesCash;
-    }, [state.sales, state.expenses, state.credits]);
+    }, [state.sales, state.expenses, state.credits, selectedFY, selectedCompanyId]);
 
     const getUPIBalance = useCallback(() => {
-        const salesUPI = state.sales.filter(s => s.paymentMethod === 'UPI').reduce((sum, s) => sum + (s.paidAmount ?? s.totalAmount ?? 0), 0);
-        const expensesUPI = state.expenses.filter(e => e.paymentMethod === 'UPI').reduce((sum, e) => sum + (e.amount ?? 0), 0);
-        const creditReceivedUPI = state.credits.filter(c => c.type === 'given').reduce((sum, c) => {
+        const salesUPI = state.sales.filter(s => (s.companyId || 'default') === selectedCompanyId && getFinancialYear(s.date) === selectedFY && s.paymentMethod === 'UPI').reduce((sum, s) => sum + (s.paidAmount ?? s.totalAmount ?? 0), 0);
+        const expensesUPI = state.expenses.filter(e => (e.companyId || 'default') === selectedCompanyId && getFinancialYear(e.date) === selectedFY && e.paymentMethod === 'UPI').reduce((sum, e) => sum + (e.amount ?? 0), 0);
+        const creditReceivedUPI = state.credits.filter(c => (c.companyId || 'default') === selectedCompanyId && getFinancialYear(c.date) === selectedFY && c.type === 'given').reduce((sum, c) => {
             const upiPayments = c.payments?.filter(p => p.paymentMode === 'UPI') || [];
             return sum + upiPayments.reduce((pSum, p) => pSum + p.amount, 0);
         }, 0);
         return salesUPI + creditReceivedUPI - expensesUPI;
-    }, [state.sales, state.expenses, state.credits]);
+    }, [state.sales, state.expenses, state.credits, selectedFY, selectedCompanyId]);
 
     return (
         <AppContext.Provider value={{
@@ -821,6 +918,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             updateSettings, clearAllData, restoreData,
             getTodaySales, getTodayExpenses, getTodayProfit,
             getBalance, getCashBalance, getUPIBalance,
+            selectedFY, setSelectedFY, availableFYs,
+            selectedCompanyId, setSelectedCompanyId,
+            addCompany, updateCompany, deleteCompany,
         }}>
             {children}
         </AppContext.Provider>

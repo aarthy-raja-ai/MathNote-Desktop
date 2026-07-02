@@ -5,9 +5,10 @@ import { useApp } from '../context';
 import { useAuth } from '../context/AuthContext';
 import { SaleItem, INDIAN_STATES } from '../utils/storage';
 import { generateInvoiceHTML, printInvoice, saleToInvoiceData } from '../utils/invoiceGenerator';
+import { getFinancialYear, getNextSequenceNumber } from '../utils/fyHelpers';
 
 const SalesScreen: React.FC = () => {
-    const { state, addSale, deleteSale, updateSettings } = useApp();
+    const { state, addSale, deleteSale, updateSettings, selectedFY, selectedCompanyId } = useApp();
     const location = useLocation();
     const { auth, canDelete } = useAuth();
     const currency = state.settings.currency || '₹';
@@ -176,7 +177,7 @@ const SalesScreen: React.FC = () => {
     const grandTotal = taxMode === 'inclusive' ? afterDiscount : afterDiscount + taxAmount;
     const gstRate = gstEnabled ? (state.settings.gstRate || 18) : 0;
 
-    const invoiceNumber = `${state.settings.invoicePrefix || 'INV'}-${String((state.settings.lastInvoiceNumber || 0) + 1).padStart(4, '0')}`;
+    const invoiceNumber = getNextSequenceNumber(state.sales, state.settings.invoicePrefix || 'INV', 'invoiceNumber', selectedFY, selectedCompanyId);
 
     const resetForm = () => {
         setCustomerName('Walk-in');
@@ -219,13 +220,12 @@ const SalesScreen: React.FC = () => {
             gstRate: gstRate || undefined,
             taxMode,
         });
-        await updateSettings({ lastInvoiceNumber: (state.settings.lastInvoiceNumber || 0) + 1 });
         resetForm();
         setShowModal(false);
     };
 
     const filtered = useMemo(() => {
-        let list = [...state.sales].reverse();
+        let list = [...state.sales].filter(s => getFinancialYear(s.date) === selectedFY && (s.companyId || 'default') === selectedCompanyId).reverse();
         if (search) {
             const q = search.toLowerCase();
             list = list.filter(s =>
@@ -236,12 +236,12 @@ const SalesScreen: React.FC = () => {
         }
         if (filterMethod !== 'all') list = list.filter(s => s.paymentMethod === filterMethod);
         return list;
-    }, [state.sales, search, filterMethod]);
+    }, [state.sales, search, filterMethod, selectedFY, selectedCompanyId]);
 
     const today = new Date().toISOString().split('T')[0];
     const todaySales = useMemo(() => {
-        return state.sales.filter(s => s.date === today);
-    }, [state.sales]);
+        return state.sales.filter(s => s.date === today && (s.companyId || 'default') === selectedCompanyId);
+    }, [state.sales, selectedCompanyId]);
 
     const todayTotal = todaySales.reduce((s, sale) => s + sale.totalAmount, 0);
     const todayCount = todaySales.length;

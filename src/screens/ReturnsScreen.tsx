@@ -2,9 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { RefreshCcw, Plus, Search, Trash2, X, AlertTriangle, ShoppingCart } from 'lucide-react';
 import { useApp } from '../context';
 import { SaleItem } from '../utils/storage';
+import { getFinancialYear } from '../utils/fyHelpers';
 
 const ReturnsScreen: React.FC = () => {
-    const { state, addReturn, deleteReturn } = useApp();
+    const { state, addReturn, deleteReturn, selectedFY, selectedCompanyId } = useApp();
     const currency = state.settings.currency || '₹';
     const fmt = (n: number) => `${currency}${n.toLocaleString('en-IN')}`;
 
@@ -15,7 +16,7 @@ const ReturnsScreen: React.FC = () => {
     const [saleSearch, setSaleSearch] = useState('');
 
     const filtered = useMemo(() => {
-        let list = [...state.returns].reverse();
+        let list = [...state.returns].filter(r => getFinancialYear(r.date) === selectedFY && (r.companyId || 'default') === selectedCompanyId).reverse();
         if (search) {
             const s = search.toLowerCase();
             list = list.filter(r =>
@@ -25,16 +26,18 @@ const ReturnsScreen: React.FC = () => {
             );
         }
         return list;
-    }, [state.returns, search]);
+    }, [state.returns, search, selectedFY, selectedCompanyId]);
 
     const matchingSales = useMemo(() => {
         if (!saleSearch) return [];
         const s = saleSearch.toLowerCase();
         return state.sales.filter(sale =>
-            sale.invoiceNumber?.toLowerCase().includes(s) ||
-            sale.customerName?.toLowerCase().includes(s)
+            (sale.companyId || 'default') === selectedCompanyId && (
+                sale.invoiceNumber?.toLowerCase().includes(s) ||
+                sale.customerName?.toLowerCase().includes(s)
+            )
         ).slice(0, 5);
-    }, [state.sales, saleSearch]);
+    }, [state.sales, saleSearch, selectedCompanyId]);
 
     const selectedSale = useMemo(() =>
         state.sales.find(s => s.id === selectedSaleId),

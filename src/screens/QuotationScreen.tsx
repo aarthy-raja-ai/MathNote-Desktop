@@ -4,6 +4,7 @@ import { useApp } from '../context';
 import { useAuth } from '../context/AuthContext';
 import { SaleItem, INDIAN_STATES, QuotationStatus } from '../utils/storage';
 import { generateInvoiceHTML, printInvoice, quotationToInvoiceData } from '../utils/invoiceGenerator';
+import { getFinancialYear, getNextSequenceNumber } from '../utils/fyHelpers';
 
 const STATUS_COLORS: Record<QuotationStatus, string> = {
     draft: 'var(--color-text-muted)',
@@ -14,7 +15,7 @@ const STATUS_COLORS: Record<QuotationStatus, string> = {
 };
 
 const QuotationScreen: React.FC = () => {
-    const { state, addQuotation, updateQuotation, deleteQuotation, addSale, updateSettings } = useApp();
+    const { state, addQuotation, updateQuotation, deleteQuotation, addSale, updateSettings, selectedFY, selectedCompanyId } = useApp();
     const { auth } = useAuth();
     const currency = state.settings.currency || '₹';
     const fmt = (n: number) => `${currency}${Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -99,7 +100,7 @@ const QuotationScreen: React.FC = () => {
     const igst = isInterState ? taxAmount : 0;
     const grandTotal = afterDiscount + taxAmount;
 
-    const qtnNumber = `${state.settings.quotationPrefix || 'QTN'}-${String((state.settings.lastQuotationNumber || 0) + 1).padStart(4, '0')}`;
+    const qtnNumber = getNextSequenceNumber(state.quotations, state.settings.quotationPrefix || 'QTN', 'quotationNumber', selectedFY, selectedCompanyId);
 
     const resetForm = () => {
         setCustomerName(''); setCustomerState(''); setCustomerPhone(''); setCustomerAddress('');
@@ -132,7 +133,6 @@ const QuotationScreen: React.FC = () => {
             status: 'draft',
             note: formNote || undefined,
         });
-        await updateSettings({ lastQuotationNumber: (state.settings.lastQuotationNumber || 0) + 1 });
         resetForm();
         setShowModal(false);
     };
@@ -142,7 +142,7 @@ const QuotationScreen: React.FC = () => {
         if (!q || q.status === 'converted') return;
         if (!confirm('Convert this quotation to a sale? Stock will be deducted.')) return;
 
-        const invoiceNum = `${state.settings.invoicePrefix || 'INV'}-${String((state.settings.lastInvoiceNumber || 0) + 1).padStart(4, '0')}`;
+        const invoiceNum = getNextSequenceNumber(state.sales, state.settings.invoicePrefix || 'INV', 'invoiceNumber', selectedFY, selectedCompanyId);
         await addSale({
             customerName: q.customerName,
             customerState: q.customerState,
@@ -164,7 +164,6 @@ const QuotationScreen: React.FC = () => {
             igst: q.igst,
             gstRate: q.gstRate,
         });
-        await updateSettings({ lastInvoiceNumber: (state.settings.lastInvoiceNumber || 0) + 1 });
         await updateQuotation(qId, { status: 'converted' });
     };
 
@@ -192,14 +191,14 @@ const QuotationScreen: React.FC = () => {
     };
 
     const filtered = useMemo(() => {
-        let list = [...state.quotations].reverse();
+        let list = [...state.quotations].filter(x => getFinancialYear(x.date) === selectedFY && (x.companyId || 'default') === selectedCompanyId).reverse();
         if (search) {
             const q = search.toLowerCase();
             list = list.filter(x => x.customerName?.toLowerCase().includes(q) || x.quotationNumber?.toLowerCase().includes(q));
         }
         if (statusFilter !== 'all') list = list.filter(x => x.status === statusFilter);
         return list;
-    }, [state.quotations, search, statusFilter]);
+    }, [state.quotations, search, statusFilter, selectedFY, selectedCompanyId]);
 
     const currentView = viewId ? state.quotations.find(q => q.id === viewId) : null;
 

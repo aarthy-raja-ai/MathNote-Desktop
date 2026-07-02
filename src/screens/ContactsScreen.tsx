@@ -3,7 +3,7 @@ import { Users, Plus, Search, Trash2, Edit, X, Phone, Mail } from 'lucide-react'
 import { useApp } from '../context';
 
 const ContactsScreen: React.FC = () => {
-    const { state, addContact, updateContact, deleteContact } = useApp();
+    const { state, addContact, updateContact, deleteContact, selectedCompanyId } = useApp();
     const [showModal, setShowModal] = useState(false);
     const [editId, setEditId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
@@ -11,11 +11,11 @@ const ContactsScreen: React.FC = () => {
     const [form, setForm] = useState({ name: '', phone: '', email: '', address: '', type: 'customer' as 'customer' | 'vendor' | 'both' | 'staff' | 'employee' | 'other' });
 
     const filtered = useMemo(() => {
-        let list = [...state.contacts];
+        let list = [...state.contacts].filter(c => (c.companyId || 'default') === selectedCompanyId);
         if (search) list = list.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search));
         if (filterType !== 'all') list = list.filter(c => c.type === filterType);
         return list.sort((a, b) => a.name.localeCompare(b.name));
-    }, [state.contacts, search, filterType]);
+    }, [state.contacts, search, filterType, selectedCompanyId]);
 
     const openEdit = (c: typeof state.contacts[0]) => {
         setEditId(c.id);
@@ -32,7 +32,7 @@ const ContactsScreen: React.FC = () => {
     return (
         <div className="animate-in">
             <div className="page-header">
-                <div><h1>Contacts</h1><p>{state.contacts.length} contacts</p></div>
+                <div><h1>Contacts</h1><p>{filtered.length} contacts</p></div>
                 <button className="btn btn-primary" onClick={() => { setEditId(null); setForm({ name: '', phone: '', email: '', address: '', type: 'customer' }); setShowModal(true); }}><Plus size={18} />Add Contact</button>
             </div>
 

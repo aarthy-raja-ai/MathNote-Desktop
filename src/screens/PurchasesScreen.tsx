@@ -3,9 +3,10 @@ import { ShoppingBag, Plus, Search, Trash2, Eye, X, Package } from 'lucide-react
 import { useApp } from '../context';
 import { useAuth } from '../context/AuthContext';
 import { SaleItem, INDIAN_STATES } from '../utils/storage';
+import { getFinancialYear } from '../utils/fyHelpers';
 
 const PurchasesScreen: React.FC = () => {
-    const { state, addPurchase, deletePurchase } = useApp();
+    const { state, addPurchase, deletePurchase, selectedFY, selectedCompanyId } = useApp();
     const { auth } = useAuth();
     const currency = state.settings.currency || '₹';
     const fmt = (n: number) => `${currency}${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -96,20 +97,20 @@ const PurchasesScreen: React.FC = () => {
     };
 
     const filtered = useMemo(() => {
-        let list = [...state.purchases].reverse();
+        let list = [...state.purchases].filter(p => getFinancialYear(p.date) === selectedFY && (p.companyId || 'default') === selectedCompanyId).reverse();
         if (search) list = list.filter(p => p.vendorName?.toLowerCase().includes(search.toLowerCase()));
         return list;
-    }, [state.purchases, search]);
+    }, [state.purchases, search, selectedFY, selectedCompanyId]);
 
     const productResults = useMemo(() => {
         if (!itemSearch) return [];
-        return state.products.filter(p => p.name.toLowerCase().includes(itemSearch.toLowerCase()) || p.sku?.toLowerCase().includes(itemSearch.toLowerCase())).slice(0, 8);
-    }, [state.products, itemSearch]);
+        return state.products.filter(p => (p.companyId || 'default') === selectedCompanyId && (p.name.toLowerCase().includes(itemSearch.toLowerCase()) || p.sku?.toLowerCase().includes(itemSearch.toLowerCase()))).slice(0, 8);
+    }, [state.products, itemSearch, selectedCompanyId]);
 
     const todayPurchases = useMemo(() => {
         const today = new Date().toISOString().split('T')[0];
-        return state.purchases.filter(p => p.date === today);
-    }, [state.purchases]);
+        return state.purchases.filter(p => p.date === today && (p.companyId || 'default') === selectedCompanyId);
+    }, [state.purchases, selectedCompanyId]);
 
     return (
         <div className="animate-in">
