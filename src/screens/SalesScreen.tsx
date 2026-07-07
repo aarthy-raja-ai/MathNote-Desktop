@@ -10,7 +10,7 @@ import { getFinancialYear, getNextSequenceNumber } from '../utils/fyHelpers';
 const SalesScreen: React.FC = () => {
     const { state, addSale, deleteSale, updateSettings, selectedFY, selectedCompanyId } = useApp();
     const location = useLocation();
-    const { auth, canDelete } = useAuth();
+    const { auth, canDelete, hasPermission } = useAuth();
     const currency = state.settings.currency || '₹';
     const fmt = (n: number) => `${currency}${Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
@@ -298,7 +298,9 @@ const SalesScreen: React.FC = () => {
                     <h1>Sales</h1>
                     <p>{state.sales.length} total sales · Today: {todayCount} sales ({fmt(todayTotal)})</p>
                 </div>
-                <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={18} />New Sale</button>
+                {hasPermission('sales', 'add') && (
+                    <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={18} />New Sale</button>
+                )}
             </div>
 
             {/* Filters */}

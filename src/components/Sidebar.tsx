@@ -33,9 +33,45 @@ const navItems = [
 
 const Sidebar: React.FC = () => {
     const { isDark, toggleTheme } = useTheme();
-    const { auth, logout, canManageUsers } = useAuth();
+    const { auth, logout, canManageUsers, hasPermission } = useAuth();
     const { selectedFY, setSelectedFY, availableFYs, selectedCompanyId, setSelectedCompanyId, state: { companies } } = useApp();
     const location = useLocation();
+
+    const isPathVisible = (path: string | undefined): boolean => {
+        if (!path) return false;
+        if (!auth.currentUser) return false;
+        if (auth.currentUser.role === 'owner') return true;
+        
+        switch (path) {
+            case '/':
+                return true;
+            case '/sales':
+            case '/returns':
+            case '/quotations':
+                return hasPermission('sales', 'view');
+            case '/expenses':
+                return hasPermission('expenses', 'view');
+            case '/credits':
+                return hasPermission('credits', 'view');
+            case '/purchases':
+            case '/purchase-orders':
+                return hasPermission('purchases', 'view');
+            case '/inventory':
+                return hasPermission('inventory', 'view');
+            case '/contacts':
+                return hasPermission('sales', 'view') || hasPermission('purchases', 'view');
+            case '/attendance':
+                return hasPermission('staff', 'view');
+            case '/companies':
+                return hasPermission('settings', 'view');
+            case '/user-manager':
+                return hasPermission('staff', 'view');
+            case '/reports':
+                return hasPermission('reports', 'view');
+            default:
+                return true;
+        }
+    };
 
     return (
         <aside className="sidebar">
@@ -127,8 +163,7 @@ const Sidebar: React.FC = () => {
                         return <div key={i} className="sidebar-section-label">{item.section}</div>;
                     }
                     if (!('path' in item)) return null;
-                    // Hide owner-only items for non-owners
-                    if ('ownerOnly' in item && item.ownerOnly && !canManageUsers) return null;
+                    if (!isPathVisible(item.path)) return null;
                     const Icon = item.icon!;
                     return (
                         <NavLink

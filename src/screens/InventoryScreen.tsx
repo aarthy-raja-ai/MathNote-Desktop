@@ -1,15 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Package, Plus, Search, Trash2, Edit, X, AlertTriangle, BarChart3, TrendingDown, DollarSign } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Package, Plus, Search, Trash2, Edit, X, AlertTriangle, BarChart3, TrendingDown, DollarSign, ShoppingBag } from 'lucide-react';
 import { useApp } from '../context';
 
 const InventoryScreen: React.FC = () => {
     const { state, addProduct, updateProduct, deleteProduct, selectedCompanyId } = useApp();
     const location = useLocation();
+    const navigate = useNavigate();
     const currency = state.settings.currency || '₹';
     const fmt = (n: number) => `${currency}${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     const [showModal, setShowModal] = useState(false);
+    const [extraBarcodes, setExtraBarcodes] = useState<string[]>([]);
+    const [barcodeInput, setBarcodeInput] = useState('');
     const [editId, setEditId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
@@ -17,7 +20,7 @@ const InventoryScreen: React.FC = () => {
 
     const filtered = useMemo(() => {
         let list = [...state.products].filter(p => (p.companyId || 'default') === selectedCompanyId);
-        if (search) list = list.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase()) || p.barcode?.toLowerCase().includes(search.toLowerCase()));
+        if (search) list = list.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase()) || p.barcode?.toLowerCase().includes(search.toLowerCase()) || p.barcodes?.some(b => b.toLowerCase().includes(search.toLowerCase())));
         if (filterCategory !== 'all') list = list.filter(p => (p.category || 'Uncategorized') === filterCategory);
         return list.sort((a, b) => a.name.localeCompare(b.name));
     }, [state.products, search, filterCategory, selectedCompanyId]);
@@ -51,6 +54,8 @@ const InventoryScreen: React.FC = () => {
             lowStockThreshold: String(p.lowStockThreshold || 5),
             taxRate: String(p.taxRate !== undefined ? p.taxRate : 18)
         });
+        setExtraBarcodes(p.barcodes || []);
+        setBarcodeInput('');
         setShowModal(true);
     };
 
@@ -68,12 +73,15 @@ const InventoryScreen: React.FC = () => {
             stock: isNaN(stock) ? 0 : stock,
             sku: form.sku,
             barcode: form.barcode,
+            barcodes: extraBarcodes.filter(b => b.trim()),
             unit: form.unit,
             lowStockThreshold: parseInt(form.lowStockThreshold) || 5,
             taxRate: isNaN(taxRate) ? 18 : taxRate
         };
         if (editId) { await updateProduct(editId, data); } else { await addProduct(data); }
         setForm({ category: '', brand: '', name: '', price: '', costPrice: '', stock: '', sku: '', barcode: '', unit: 'pcs', lowStockThreshold: '5', taxRate: '18' });
+        setExtraBarcodes([]);
+        setBarcodeInput('');
         setEditId(null);
         setShowModal(false);
     };
@@ -81,6 +89,8 @@ const InventoryScreen: React.FC = () => {
     const openAddNew = () => {
         setEditId(null);
         setForm({ category: '', brand: '', name: '', price: '', costPrice: '', stock: '', sku: '', barcode: '', unit: 'pcs', lowStockThreshold: '5', taxRate: '18' });
+        setExtraBarcodes([]);
+        setBarcodeInput('');
         setShowModal(true);
     };
 
@@ -123,7 +133,12 @@ const InventoryScreen: React.FC = () => {
                     <h1>Inventory</h1>
                     <p>{state.products.length} products · {totalItems} total items in stock</p>
                 </div>
-                <button className="btn btn-primary" onClick={openAddNew}><Plus size={18} />Add Product</button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button className="btn btn-secondary" onClick={() => navigate('/purchases', { state: { openAddModal: true } })} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <ShoppingBag size={18} />Record Purchase
+                    </button>
+                    <button className="btn btn-primary" onClick={openAddNew}><Plus size={18} />Add Product</button>
+                </div>
             </div>
 
             {/* Summary Cards */}
@@ -202,7 +217,10 @@ const InventoryScreen: React.FC = () => {
                                     <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{p.brand || '—'}</td>
                                     <td style={{ fontWeight: 500 }}>{p.name}</td>
                                     <td style={{ color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>{p.sku || '—'}</td>
-                                    <td style={{ color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>{p.barcode || '—'}</td>
+                                    <td style={{ color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                                        {p.barcode || '—'}
+                                        {p.barcodes && p.barcodes.length > 0 && <span style={{ marginLeft: 4, color: 'var(--color-primary)', fontSize: '0.7rem' }}>+{p.barcodes.length}</span>}
+                                    </td>
                                     <td style={{ fontWeight: 600 }}>{fmt(p.price)}</td>
                                     <td style={{ color: 'var(--color-text-secondary)' }}>{p.costPrice ? fmt(p.costPrice) : '—'}</td>
                                     <td>
@@ -249,7 +267,26 @@ const InventoryScreen: React.FC = () => {
                             </div>
                             <div className="grid grid-3">
                                 <div className="form-group"><label className="form-label">SKU</label><input className="form-input" value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} placeholder="e.g. PRD-001" /></div>
-                                <div className="form-group"><label className="form-label">Barcode</label><input className="form-input" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} placeholder="Scan or type" /></div>
+                                <div className="form-group">
+                                    <label className="form-label">Barcodes</label>
+                                    <input className="form-input" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} placeholder="Primary barcode" />
+                                    {/* Extra barcodes chips */}
+                                    {extraBarcodes.length > 0 && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.5rem' }}>
+                                            {extraBarcodes.map((bc, idx) => (
+                                                <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--color-soft)', border: '1px solid var(--color-border)', borderRadius: 6, padding: '2px 8px', fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                                                    {bc}
+                                                    <button type="button" onClick={() => setExtraBarcodes(extraBarcodes.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-error)', padding: 0, lineHeight: 1, fontSize: '0.9rem' }}>×</button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {/* Add barcode row */}
+                                    <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem' }}>
+                                        <input className="form-input" style={{ flex: 1, fontSize: '0.85rem' }} value={barcodeInput} onChange={e => setBarcodeInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && barcodeInput.trim()) { setExtraBarcodes([...extraBarcodes, barcodeInput.trim()]); setBarcodeInput(''); }}} placeholder="Add another barcode & press Enter" />
+                                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { if (barcodeInput.trim()) { setExtraBarcodes([...extraBarcodes, barcodeInput.trim()]); setBarcodeInput(''); }}} style={{ whiteSpace: 'nowrap' }}>+ Add</button>
+                                    </div>
+                                </div>
                                 <div className="form-group">
                                     <label className="form-label">GST Tax Rate (%)</label>
                                     <select className="form-input form-select" value={form.taxRate} onChange={e => setForm({ ...form, taxRate: e.target.value })}>

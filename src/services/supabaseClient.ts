@@ -9,9 +9,14 @@ export const getSupabaseClient = (): SupabaseClient | null => {
     const key = localStorage.getItem('SUPABASE_KEY') || '';
 
     if (url && key) {
-        console.log('[Supabase] Initializing client dynamically...');
-        supabaseInstance = createClient(url, key);
-        return supabaseInstance;
+        try {
+            console.log('[Supabase] Initializing client dynamically...');
+            supabaseInstance = createClient(url, key);
+            return supabaseInstance;
+        } catch (err) {
+            console.error('[Supabase] Failed to create Supabase client:', err);
+            return null;
+        }
     }
     return null;
 };

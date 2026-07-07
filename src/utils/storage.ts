@@ -102,7 +102,8 @@ export interface Product {
     name: string;
     brand?: string;
     sku?: string;
-    barcode?: string;
+    barcode?: string;        // primary barcode (legacy)
+    barcodes?: string[];     // multiple barcodes support
     hsnCode?: string;
     category?: string;
     price: number;
@@ -212,6 +213,24 @@ export interface Attendance {
 
 export type UserRole = 'owner' | 'manager' | 'staff';
 
+export interface UserPermissionActions {
+    view: boolean;
+    add: boolean;
+    modify: boolean;
+    delete: boolean;
+}
+
+export interface UserPermissions {
+    sales: UserPermissionActions;
+    purchases: UserPermissionActions;
+    inventory: UserPermissionActions;
+    expenses: UserPermissionActions;
+    credits: UserPermissionActions;
+    reports: UserPermissionActions;
+    staff: UserPermissionActions;
+    settings: UserPermissionActions;
+}
+
 export interface User {
     id: string;
     companyId?: string;
@@ -220,6 +239,7 @@ export interface User {
     password: string;
     role: UserRole;
     createdAt: string;
+    permissions?: UserPermissions;
 }
 
 export type InvoiceTemplate = 'modern' | 'classic' | 'professional' | 'compact' | 'minimal';

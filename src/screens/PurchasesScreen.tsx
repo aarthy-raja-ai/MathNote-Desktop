@@ -1,19 +1,30 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ShoppingBag, Plus, Search, Trash2, Eye, X, Package } from 'lucide-react';
+import { ShoppingBag, Plus, Search, Trash2, Eye, X, Package, Barcode } from 'lucide-react';
 import { useApp } from '../context';
 import { useAuth } from '../context/AuthContext';
 import { SaleItem, INDIAN_STATES } from '../utils/storage';
 import { getFinancialYear } from '../utils/fyHelpers';
+import { useLocation } from 'react-router-dom';
 
 const PurchasesScreen: React.FC = () => {
     const { state, addPurchase, deletePurchase, selectedFY, selectedCompanyId } = useApp();
     const { auth } = useAuth();
+    const location = useLocation();
     const currency = state.settings.currency || '₹';
     const fmt = (n: number) => `${currency}${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     const [showModal, setShowModal] = useState(false);
     const [search, setSearch] = useState('');
     const [viewPurchase, setViewPurchase] = useState<typeof state.purchases[0] | null>(null);
+    const [barcodeSearchInput, setBarcodeSearchInput] = useState('');
+    const barcodeInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (location.state?.openAddModal) {
+            setShowModal(true);
+            window.history.replaceState({}, document.title);
+        }
+    }, [location.state?.openAddModal]);
 
     // Form state
     const [vendorName, setVendorName] = useState('');
@@ -51,6 +62,23 @@ const PurchasesScreen: React.FC = () => {
             setItems([...items, { _key: _keyCounter++, productId, productName: product.name, quantity: 1, price: product.costPrice || product.price, costPrice: product.costPrice, total: product.costPrice || product.price }]);
         }
         setItemSearch('');
+    };
+
+    // Find product by barcode (checks both barcode and barcodes[] fields)
+    const addItemByBarcode = (barcodeStr: string) => {
+        if (!barcodeStr.trim()) return;
+        const b = barcodeStr.trim().toLowerCase();
+        const product = state.products.find(p =>
+            (p.companyId || 'default') === selectedCompanyId &&
+            (p.barcode?.toLowerCase() === b || p.barcodes?.some(bc => bc.toLowerCase() === b))
+        );
+        if (product) {
+            addItem(product.id);
+            setBarcodeSearchInput('');
+        } else {
+            alert(`No product found for barcode: ${barcodeStr}`);
+            setBarcodeSearchInput('');
+        }
     };
 
     const updateItemQty = (key: number, qty: number) => {
@@ -104,7 +132,16 @@ const PurchasesScreen: React.FC = () => {
 
     const productResults = useMemo(() => {
         if (!itemSearch) return [];
-        return state.products.filter(p => (p.companyId || 'default') === selectedCompanyId && (p.name.toLowerCase().includes(itemSearch.toLowerCase()) || p.sku?.toLowerCase().includes(itemSearch.toLowerCase()))).slice(0, 8);
+        const q = itemSearch.toLowerCase();
+        return state.products.filter(p =>
+            (p.companyId || 'default') === selectedCompanyId &&
+            (
+                p.name.toLowerCase().includes(q) ||
+                p.sku?.toLowerCase().includes(q) ||
+                p.barcode?.toLowerCase().includes(q) ||
+                p.barcodes?.some(b => b.toLowerCase().includes(q))
+            )
+        ).slice(0, 8);
     }, [state.products, itemSearch, selectedCompanyId]);
 
     const todayPurchases = useMemo(() => {
@@ -196,6 +233,26 @@ const PurchasesScreen: React.FC = () => {
                                 <label className="form-label" style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <Package size={14} /> Add Items (stock will be added automatically)
                                 </label>
+
+                                {/* Barcode Scan Input */}
+                                <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.5rem' }}>
+                                    <div style={{ position: 'relative', flex: 1 }}>
+                                        <Barcode size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', pointerEvents: 'none' }} />
+                                        <input
+                                            ref={barcodeInputRef}
+                                            className="form-input"
+                                            style={{ paddingLeft: '2.2rem', fontFamily: 'monospace', background: 'var(--color-soft)' }}
+                                            placeholder="Scan barcode to add product instantly..."
+                                            value={barcodeSearchInput}
+                                            onChange={e => setBarcodeSearchInput(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter') { addItemByBarcode(barcodeSearchInput); } }}
+                                        />
+                                    </div>
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => addItemByBarcode(barcodeSearchInput)} style={{ whiteSpace: 'nowrap' }}>
+                                        <Barcode size={14} /> Scan
+                                    </button>
+                                </div>
+
                                 <div style={{ position: 'relative' }} ref={dropdownRef}>
                                     <input className="form-input" placeholder="Search products..." value={itemSearch} onChange={e => { setItemSearch(e.target.value); setShowDropdown(true); }} onFocus={() => itemSearch && setShowDropdown(true)} />
                                     {showDropdown && productResults.length > 0 && (

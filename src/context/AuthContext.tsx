@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import storage, { User, UserRole } from '../utils/storage';
+import storage, { User, UserRole, UserPermissions } from '../utils/storage';
 
 export interface BusinessProfile {
     businessName: string;
@@ -32,13 +32,14 @@ interface AuthContextType {
     logout: () => void;
     register: (profile: BusinessProfile, ownerUsername: string, ownerPassword: string, ownerName: string) => Promise<void>;
     updateProfile: (updates: Partial<BusinessProfile>) => void;
-    addUser: (name: string, username: string, password: string, role: UserRole) => Promise<boolean>;
+    addUser: (name: string, username: string, password: string, role: UserRole, permissions?: UserPermissions) => Promise<boolean>;
     updateUser: (id: string, updates: Partial<User>) => Promise<boolean>;
     deleteUser: (id: string) => boolean;
     canDelete: boolean;
     canManageSettings: boolean;
     canManageUsers: boolean;
     canViewReports: boolean;
+    hasPermission: (module: keyof UserPermissions, action: 'view' | 'add' | 'modify' | 'delete') => boolean;
 }
 
 const PROFILE_KEY = '@mathnote_auth';
@@ -156,7 +157,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setAuth(prev => ({ ...prev, isAuthenticated: false, currentUser: null }));
     }, []);
 
-    const addUser = useCallback(async (name: string, username: string, password: string, role: UserRole): Promise<boolean> => {
+    const addUser = useCallback(async (name: string, username: string, password: string, role: UserRole, permissions?: UserPermissions): Promise<boolean> => {
         const uname = username.toLowerCase().trim();
         if (auth.users.some(u => u.username.toLowerCase() === uname)) {
             return false;
@@ -169,6 +170,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             password: hashedPassword,
             role,
             createdAt: new Date().toISOString(),
+            permissions,
         };
         const newUsers = [...auth.users, newUser];
         persistUsers(newUsers);
@@ -217,11 +219,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return true;
     }, [auth.users, persistUsers]);
 
-    const role = auth.currentUser?.role || null;
-    const canManageSettings = role === 'owner';
-    const canManageUsers = role === 'owner';
-    const canDelete = role === 'owner' || role === 'manager';
-    const canViewReports = role === 'owner' || role === 'manager';
+    const hasPermission = useCallback((module: keyof UserPermissions, action: 'view' | 'add' | 'modify' | 'delete'): boolean => {
+        const user = auth.currentUser;
+        if (!user) return false;
+        if (user.role === 'owner') return true;
+        const perms = user.permissions || getDefaultPermissions(user.role);
+        return !!perms[module]?.[action];
+    }, [auth.currentUser]);
+
+    const canManageSettings = hasPermission('settings', 'view');
+    const canManageUsers = hasPermission('staff', 'view');
+    const canDelete = hasPermission('sales', 'delete') || hasPermission('purchases', 'delete') || auth.currentUser?.role === 'owner' || auth.currentUser?.role === 'manager';
+    const canViewReports = hasPermission('reports', 'view');
 
     if (!loaded) return null;
 
@@ -240,10 +249,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             canManageSettings,
             canManageUsers,
             canViewReports,
+            hasPermission,
         }}>
             {children}
         </AuthContext.Provider>
     );
+};
+
+export const getDefaultPermissions = (role: UserRole): UserPermissions => {
+    const isManager = role === 'manager';
+    return {
+        sales: { view: true, add: true, modify: isManager, delete: false },
+        purchases: { view: true, add: true, modify: isManager, delete: false },
+        inventory: { view: true, add: isManager, modify: isManager, delete: false },
+        expenses: { view: true, add: true, modify: isManager, delete: false },
+        credits: { view: true, add: true, modify: isManager, delete: false },
+        reports: { view: isManager, add: false, modify: false, delete: false },
+        staff: { view: isManager, add: false, modify: false, delete: false },
+        settings: { view: false, add: false, modify: false, delete: false },
+    };
 };
 
 export const useAuth = (): AuthContextType => {

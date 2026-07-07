@@ -1,7 +1,17 @@
 import React, { useState } from 'react';
 import { Users, Plus, Trash2, Edit, X, Shield, ShieldCheck, ShieldAlert, User as UserIcon } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { UserRole } from '../utils/storage';
+import { useAuth, getDefaultPermissions } from '../context/AuthContext';
+import { UserRole, UserPermissions } from '../utils/storage';
+
+const PERMISSION_TABS = [
+    { id: 'sales', label: 'Sale', keys: [{ id: 'sales' as keyof UserPermissions, label: 'Sales & Customers' }] },
+    { id: 'purchases', label: 'Purchase', keys: [{ id: 'purchases' as keyof UserPermissions, label: 'Purchases & Vendors' }] },
+    { id: 'inventory', label: 'Inventory', keys: [{ id: 'inventory' as keyof UserPermissions, label: 'Inventory & Products' }] },
+    { id: 'staff', label: 'Staff', keys: [{ id: 'staff' as keyof UserPermissions, label: 'Staff & Users' }] },
+    { id: 'account', label: 'Account', keys: [{ id: 'expenses' as keyof UserPermissions, label: 'Expenses' }, { id: 'credits' as keyof UserPermissions, label: 'Credits' }] },
+    { id: 'reports', label: 'Report', keys: [{ id: 'reports' as keyof UserPermissions, label: 'Reports & Analytics' }] },
+    { id: 'settings', label: 'Settings', keys: [{ id: 'settings' as keyof UserPermissions, label: 'Settings & Backups' }] },
+];
 
 const ROLES: { value: UserRole; label: string; icon: React.ReactNode; desc: string }[] = [
     { value: 'owner', label: 'Owner', icon: <ShieldAlert size={16} />, desc: 'Full access — can manage users, settings, and all data' },
@@ -14,10 +24,25 @@ const UserManagerScreen: React.FC = () => {
     const [showModal, setShowModal] = useState(false);
     const [editId, setEditId] = useState<string | null>(null);
     const [error, setError] = useState('');
-    const [form, setForm] = useState({ name: '', username: '', password: '', role: 'staff' as UserRole });
+    const [modalTab, setModalTab] = useState<'user' | 'rights'>('user');
+    const [activeRightTab, setActiveRightTab] = useState('sales');
+    const [form, setForm] = useState({
+        name: '',
+        username: '',
+        password: '',
+        role: 'staff' as UserRole,
+        permissions: getDefaultPermissions('staff')
+    });
 
     const resetForm = () => {
-        setForm({ name: '', username: '', password: '', role: 'staff' });
+        setForm({
+            name: '',
+            username: '',
+            password: '',
+            role: 'staff',
+            permissions: getDefaultPermissions('staff')
+        });
+        setModalTab('user');
         setEditId(null);
         setError('');
     };
@@ -29,7 +54,14 @@ const UserManagerScreen: React.FC = () => {
 
     const openEdit = (user: typeof auth.users[0]) => {
         setEditId(user.id);
-        setForm({ name: user.name, username: user.username, password: '', role: user.role });
+        setForm({
+            name: user.name,
+            username: user.username,
+            password: '',
+            role: user.role,
+            permissions: user.permissions || getDefaultPermissions(user.role)
+        });
+        setModalTab('user');
         setError('');
         setShowModal(true);
     };
@@ -41,7 +73,12 @@ const UserManagerScreen: React.FC = () => {
         if (!/^[a-zA-Z0-9_]+$/.test(form.username.trim())) { setError('Username can only contain letters, numbers, and underscores'); return; }
 
         if (editId) {
-            const updates: Record<string, string> = { name: form.name, username: form.username, role: form.role };
+            const updates: Record<string, any> = {
+                name: form.name,
+                username: form.username,
+                role: form.role,
+                permissions: form.permissions
+            };
             if (form.password) {
                 if (form.password.length < 4) { setError('Password must be at least 4 characters'); return; }
                 updates.password = form.password;
@@ -51,11 +88,25 @@ const UserManagerScreen: React.FC = () => {
         } else {
             if (!form.password) { setError('Password is required'); return; }
             if (form.password.length < 4) { setError('Password must be at least 4 characters'); return; }
-            const success = await addUser(form.name, form.username, form.password, form.role);
+            const success = await addUser(form.name, form.username, form.password, form.role, form.permissions);
             if (!success) { setError('Username already taken'); return; }
         }
         setShowModal(false);
         resetForm();
+    };
+
+    const handleRoleChange = (newRole: UserRole) => {
+        setForm({
+            ...form,
+            role: newRole,
+            permissions: getDefaultPermissions(newRole)
+        });
+    };
+
+    const handleTogglePermission = (key: keyof UserPermissions, action: 'view' | 'add' | 'modify' | 'delete') => {
+        const updated = { ...form.permissions };
+        updated[key] = { ...updated[key], [action]: !updated[key][action] };
+        setForm({ ...form, permissions: updated });
     };
 
     const handleDelete = (id: string) => {
@@ -155,43 +206,121 @@ const UserManagerScreen: React.FC = () => {
             {/* Add/Edit Modal */}
             {showModal && (
                 <div className="modal-overlay" onClick={() => setShowModal(false)}>
-                    <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
+                    <div className="modal" style={{ width: '820px', maxWidth: '95vw', height: '580px', display: 'flex', flexDirection: 'column', padding: 0 }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-header" style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--color-border)' }}>
                             <h2>{editId ? 'Edit User' : 'Add User'}</h2>
                             <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}><X size={18} /></button>
                         </div>
-                        <div className="modal-body">
-                            <div className="form-group">
-                                <label className="form-label">Full Name *</label>
-                                <input className="form-input" value={form.name} onChange={e => { setForm({ ...form, name: e.target.value }); setError(''); }} placeholder="e.g. Ravi Kumar" />
+                        
+                        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+                            {/* Modal Sidebar */}
+                            <div style={{ width: '180px', borderRight: '1px solid var(--color-border)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', backgroundColor: 'var(--color-bg-secondary)' }}>
+                                <button className={`btn ${modalTab === 'user' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setModalTab('user')} style={{ justifyContent: 'flex-start', width: '100%', padding: '8px 12px' }}>
+                                    <UserIcon size={16} style={{ marginRight: 8 }} /> Manage User
+                                </button>
+                                <button className={`btn ${modalTab === 'rights' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setModalTab('rights')} style={{ justifyContent: 'flex-start', width: '100%', padding: '8px 12px' }}>
+                                    <Shield size={16} style={{ marginRight: 8 }} /> Access Rights
+                                </button>
                             </div>
-                            <div className="form-group">
-                                <label className="form-label">Username *</label>
-                                <input className="form-input" value={form.username} onChange={e => { setForm({ ...form, username: e.target.value.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20) }); setError(''); }} placeholder="e.g. ravi_staff" autoComplete="off" />
-                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 2, display: 'block' }}>Letters, numbers, and underscores only</span>
+
+                            {/* Modal Tab Content Area */}
+                            <div style={{ flex: 1, padding: '1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                                {modalTab === 'user' ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        <div className="form-group">
+                                            <label className="form-label">Full Name *</label>
+                                            <input className="form-input" value={form.name} onChange={e => { setForm({ ...form, name: e.target.value }); setError(''); }} placeholder="e.g. Ravi Kumar" />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Username *</label>
+                                            <input className="form-input" value={form.username} onChange={e => { setForm({ ...form, username: e.target.value.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20) }); setError(''); }} placeholder="e.g. ravi_staff" autoComplete="off" />
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 2, display: 'block' }}>Letters, numbers, and underscores only</span>
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Password {editId ? '(leave blank to keep current)' : '*'}</label>
+                                            <input className="form-input" type="password" value={form.password} onChange={e => { setForm({ ...form, password: e.target.value }); setError(''); }} placeholder={editId ? 'Leave blank to keep unchanged' : 'At least 4 characters'} autoComplete="new-password" />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Role *</label>
+                                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                {ROLES.map(r => (
+                                                    <button
+                                                        key={r.value}
+                                                        className={`chip ${form.role === r.value ? 'active' : ''}`}
+                                                        onClick={() => handleRoleChange(r.value)}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                                                    >
+                                                        {r.icon} {r.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {error && <div className="auth-error" style={{ marginTop: '0.5rem' }}>{error}</div>}
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                                        {form.role === 'owner' ? (
+                                            <div style={{ padding: '1rem', backgroundColor: '#e2f0d9', color: '#385723', borderRadius: '8px', marginBottom: '1rem', fontWeight: 600, fontSize: '0.85rem' }}>
+                                                Note : Admin/Owner role will override these settings and get full access
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                                                {/* Access tabs bar */}
+                                                <div style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--color-border)', marginBottom: '1rem', overflowX: 'auto', paddingBottom: '4px' }}>
+                                                    {PERMISSION_TABS.map(tab => (
+                                                        <button
+                                                            key={tab.id}
+                                                            className={`btn ${activeRightTab === tab.id ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'}`}
+                                                            onClick={() => setActiveRightTab(tab.id)}
+                                                            style={{ padding: '4px 10px', height: '28px', fontSize: '0.8rem' }}
+                                                        >
+                                                            {tab.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+
+                                                {/* Rights table */}
+                                                <table className="data-table" style={{ fontSize: '0.85rem' }}>
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Name</th>
+                                                            <th style={{ width: 80, textAlign: 'center' }}>View</th>
+                                                            <th style={{ width: 80, textAlign: 'center' }}>Add</th>
+                                                            <th style={{ width: 80, textAlign: 'center' }}>Modify</th>
+                                                            <th style={{ width: 80, textAlign: 'center' }}>Delete</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {PERMISSION_TABS.find(t => t.id === activeRightTab)?.keys.map(key => {
+                                                            const perm = form.permissions[key.id] || { view: false, add: false, modify: false, delete: false };
+                                                            return (
+                                                                <tr key={key.id}>
+                                                                    <td style={{ fontWeight: 600 }}>{key.label}</td>
+                                                                    <td style={{ textAlign: 'center' }}>
+                                                                        <input type="checkbox" checked={perm.view} onChange={() => handleTogglePermission(key.id, 'view')} />
+                                                                    </td>
+                                                                    <td style={{ textAlign: 'center' }}>
+                                                                        <input type="checkbox" checked={perm.add} onChange={() => handleTogglePermission(key.id, 'add')} />
+                                                                    </td>
+                                                                    <td style={{ textAlign: 'center' }}>
+                                                                        <input type="checkbox" checked={perm.modify} onChange={() => handleTogglePermission(key.id, 'modify')} />
+                                                                    </td>
+                                                                    <td style={{ textAlign: 'center' }}>
+                                                                        <input type="checkbox" checked={perm.delete} onChange={() => handleTogglePermission(key.id, 'delete')} />
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
-                            <div className="form-group">
-                                <label className="form-label">Password {editId ? '(leave blank to keep current)' : '*'}</label>
-                                <input className="form-input" type="password" value={form.password} onChange={e => { setForm({ ...form, password: e.target.value }); setError(''); }} placeholder={editId ? 'Leave blank to keep unchanged' : 'At least 4 characters'} autoComplete="new-password" />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Role *</label>
-                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                    {ROLES.map(r => (
-                                        <button
-                                            key={r.value}
-                                            className={`chip ${form.role === r.value ? 'active' : ''}`}
-                                            onClick={() => setForm({ ...form, role: r.value })}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-                                        >
-                                            {r.icon} {r.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            {error && <div className="auth-error" style={{ marginTop: '0.5rem' }}>{error}</div>}
                         </div>
-                        <div className="modal-footer">
+
+                        <div className="modal-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--color-border)' }}>
                             <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
                             <button className="btn btn-primary" onClick={handleSave}>{editId ? 'Save Changes' : 'Add User'}</button>
                         </div>
